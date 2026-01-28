@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/uploads:/app/uploads
+      - ./backend/app:/app/app
+    environment:
+      - DATABASE_URL=sqlite:///./mockmate.db
+      # Add OPENAI_API_KEY environment variable if available
+    networks:
+      - mockmate-net
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    environment:
+       # We need to build with this env var or pass it at runtime if using a runtime-config script
+       # Since Vite builds statically, we must build with the ENV.
+       # Docker compose environment for build args usually requires `args` in build section.
+       # For simplicity, we assume frontend talks to localhost:8000 (browser side).
+       # But inside docker network, browser is outside. 
+       # So frontend (browser) -> localhost:8000 is correct for local dev.
+       - VITE_API_URL=http://localhost:8000
+    networks:
+      - mockmate-net
+
+networks:
+  mockmate-net:
+    driver: bridge

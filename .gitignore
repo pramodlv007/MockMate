@@ -1,0 +1,18 @@
+# General
+**/node_modules/
+**/__pycache__/
+**/*.pyc
+.DS_Store
+Thumbs.db
+*.webm
+*.db
+.env
+.env.*
+
+# Backend specific
+backend/uploads/
+backend/mockmate.db
+
+# Frontend specific
+frontend/dist/
+frontend/node_modules/

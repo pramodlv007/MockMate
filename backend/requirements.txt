@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+sqlalchemy
+pydantic
+python-multipart
+python-dotenv
+httpx
+pytest
+# For AI integration (placeholders)
+openai
+google-generativeai
+okta-jwt-verifier # if we add auth later, but for now maybe just simple
+passlib[bcrypt]
+python-jose
