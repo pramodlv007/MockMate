@@ -6,11 +6,12 @@ Refresh token stored in HttpOnly cookie; access token returned in JSON body.
 from fastapi import FastAPI, Depends, HTTPException, status, Response, Cookie, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
-import os
+import os, traceback
 from dotenv import load_dotenv
 from pathlib import Path
 
@@ -23,7 +24,13 @@ models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="MockMate Auth Service", version="2.0.0")
 
-# CORS — Handled centrally by Gateway.
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    tb = traceback.format_exc()
+    return JSONResponse(
+        status_code=500,
+        content={"error": str(exc), "type": type(exc).__name__, "traceback": tb}
+    )
 
 
 # ─── JWT config ───────────────────────────────────────────────────────────────
