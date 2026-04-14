@@ -26,7 +26,17 @@ SQLALCHEMY_DATABASE_URL = URL.create(
     query=query_params
 )
 
-engine = create_engine(SQLALCHEMY_DATABASE_URL)
+# PgBouncer (Supabase Transaction Pooler) does NOT support prepared statements.
+# Set prepare_threshold=0 to disable them. pool_pre_ping keeps connections healthy.
+connect_args = {}
+if POSTGRES_SERVER != "localhost":
+    connect_args["prepare_threshold"] = 0
+
+engine = create_engine(
+    SQLALCHEMY_DATABASE_URL,
+    connect_args=connect_args,
+    pool_pre_ping=True,
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
