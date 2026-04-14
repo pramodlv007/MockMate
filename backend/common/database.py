@@ -12,13 +12,18 @@ POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
 POSTGRES_DB = os.getenv("POSTGRES_DB", "mockmate_db")
 
 # Use URL.create to safely encode passwords containing special chars (like @)
+query_params = {}
+if POSTGRES_SERVER != "localhost":
+    query_params["sslmode"] = "require"
+
 SQLALCHEMY_DATABASE_URL = URL.create(
     drivername="postgresql",
     username=POSTGRES_USER,
     password=POSTGRES_PASSWORD,
     host=POSTGRES_SERVER,
     port=POSTGRES_PORT,
-    database=POSTGRES_DB
+    database=POSTGRES_DB,
+    query=query_params
 )
 
 engine = create_engine(SQLALCHEMY_DATABASE_URL)

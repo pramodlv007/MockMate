@@ -92,6 +92,11 @@ async def get_current_user(
     return user
 
 
+@app.get("/health")
+def health():
+    return {"status": "ok", "service": "auth"}
+
+
 # ─── Signup ───────────────────────────────────────────────────────────────────
 @app.post("/auth/signup", response_model=schemas.AuthResponse)
 def signup(user_in: schemas.UserCreate, response: Response, db: Session = Depends(get_db)):

@@ -83,7 +83,7 @@ async def _proxy(request: Request, target_base: str, path_suffix: str) -> Respon
     if request.client:
         forward_headers["x-forwarded-for"] = request.client.host
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(timeout=90.0) as client:
         try:
             resp = await client.request(
                 method=request.method,
