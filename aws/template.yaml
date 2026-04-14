@@ -1,0 +1,239 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# MockMate — AWS SAM Template
+#
+# Deploys two showcase Lambda functions:
+#   1. mockmate-question-generate  → POST /questions/generate
+#   2. mockmate-evaluation-trigger → POST /evaluate/trigger
+#
+# Each function:
+#   - Reads API keys from AWS Secrets Manager
+#   - Logs ALL output to CloudWatch automatically (Lambda stdout = CloudWatch)
+#   - Is fronted by API Gateway (auto HTTPS)
+#   - Has rate limiting via slowapi (enforced in-process)
+#
+# Deploy:
+#   pip install aws-sam-cli
+#   cd aws
+#   sam build
+#   sam deploy --guided     (first time — saves config to samconfig.toml)
+#   sam deploy              (subsequent deploys)
+# ─────────────────────────────────────────────────────────────────────────────
+
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: MockMate Lambda Showcase — Question Generation + Evaluation Trigger
+
+# ── Global settings applied to all Functions ──────────────────────────────────
+Globals:
+  Function:
+    Runtime: python3.11
+    Architectures: [arm64]        # Graviton2 — 20% cheaper, faster for Python
+    Timeout: 300                  # 5 min — covers LLM calls
+    MemorySize: 1024              # 1GB — needed for Whisper / vision models
+    Tracing: Active               # AWS X-Ray distributed tracing
+    Environment:
+      Variables:
+        AWS_SECRETS_REGION: !Ref AWS::Region
+        POWERTOOLS_SERVICE_NAME: mockmate
+        LOG_LEVEL: INFO
+  Api:
+    Cors:
+      AllowMethods: "'GET,POST,OPTIONS'"
+      AllowHeaders: "'Content-Type,Authorization,X-Amz-Date'"
+      AllowOrigin: "'*'"           # Replace with your domain in production
+
+# ── Parameters (override at deploy time) ──────────────────────────────────────
+Parameters:
+  InterviewServiceURL:
+    Type: String
+    Default: "https://mockmate-interview.onrender.com"
+    Description: "URL of the deployed Interview Service on Render"
+
+  Stage:
+    Type: String
+    Default: prod
+    AllowedValues: [prod, staging, dev]
+
+# ── Resources ─────────────────────────────────────────────────────────────────
+Resources:
+
+  # ── Shared API Gateway ──────────────────────────────────────────────────────
+  MockMateApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub "mockmate-api-${Stage}"
+      StageName: !Ref Stage
+      TracingEnabled: true
+      Tags:
+        Project: MockMate
+        Stage: !Ref Stage
+
+  # ── Secrets Manager — stores all MockMate API keys ─────────────────────────
+  MockMateSecrets:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: mockmate/api-keys
+      Description: "MockMate LLM API Keys — managed via AWS Secrets Manager"
+      SecretString: !Sub |
+        {
+          "GOOGLE_API_KEY": "REPLACE_ME",
+          "OPENAI_API_KEY": "REPLACE_ME"
+        }
+      Tags:
+        - Key: Project
+          Value: MockMate
+
+  # ── CloudWatch Log Groups (explicit — prevents orphaned logs) ───────────────
+  QuestionGenerateLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/mockmate-question-generate
+      RetentionInDays: 14
+
+  EvaluationTriggerLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/mockmate-evaluation-trigger
+      RetentionInDays: 30        # Keep eval logs longer for debugging
+
+  # ── Lambda: Question Generation ─────────────────────────────────────────────
+  QuestionGenerateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "mockmate-question-generate-${Stage}"
+      Description: "Generates tailored interview questions via Gemini/OpenAI. Rate-limited."
+      CodeUri: lambda/question_generate/
+      Handler: handler.handler
+      Timeout: 60               # Question gen is fast (<60s)
+      MemorySize: 512           # Lighter footprint for question gen
+      Environment:
+        Variables:
+          STAGE: !Ref Stage
+      Events:
+        GenerateEndpoint:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MockMateApi
+            Path: /questions/generate
+            Method: POST
+        HealthCheck:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MockMateApi
+            Path: /questions/health
+            Method: GET
+      Policies:
+        - AWSSecretsManagerGetSecretValuePolicy:
+            SecretArn: !Ref MockMateSecrets
+        - CloudWatchLogsFullAccess
+      Tags:
+        Project: MockMate
+        Service: question-generate
+
+  # ── Lambda: Evaluation Trigger ───────────────────────────────────────────────
+  EvaluationTriggerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "mockmate-evaluation-trigger-${Stage}"
+      Description: "Triggers 4-agent AI evaluation pipeline. Results posted to Interview Service."
+      CodeUri: lambda/evaluation_trigger/
+      Handler: handler.handler
+      Timeout: 900              # 15 min max — covers full pipeline
+      MemorySize: 2048          # 2GB — moviepy + Whisper + vision models
+      Environment:
+        Variables:
+          INTERVIEW_SERVICE_URL: !Ref InterviewServiceURL
+          STAGE: !Ref Stage
+      Events:
+        TriggerEndpoint:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MockMateApi
+            Path: /evaluate/trigger
+            Method: POST
+        HealthCheck:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MockMateApi
+            Path: /evaluate/health
+            Method: GET
+      Policies:
+        - AWSSecretsManagerGetSecretValuePolicy:
+            SecretArn: !Ref MockMateSecrets
+        - CloudWatchLogsFullAccess
+      Tags:
+        Project: MockMate
+        Service: evaluation-trigger
+
+  # ── CloudWatch Dashboard ─────────────────────────────────────────────────────
+  MockMateDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub "MockMate-${Stage}"
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "properties": {
+                "title": "Lambda Invocations",
+                "metrics": [
+                  ["AWS/Lambda", "Invocations", "FunctionName", "mockmate-question-generate-${Stage}"],
+                  ["AWS/Lambda", "Invocations", "FunctionName", "mockmate-evaluation-trigger-${Stage}"]
+                ],
+                "period": 300,
+                "stat": "Sum",
+                "view": "timeSeries"
+              }
+            },
+            {
+              "type": "metric",
+              "properties": {
+                "title": "Lambda Errors",
+                "metrics": [
+                  ["AWS/Lambda", "Errors", "FunctionName", "mockmate-question-generate-${Stage}"],
+                  ["AWS/Lambda", "Errors", "FunctionName", "mockmate-evaluation-trigger-${Stage}"]
+                ],
+                "period": 300,
+                "stat": "Sum",
+                "view": "timeSeries"
+              }
+            },
+            {
+              "type": "metric",
+              "properties": {
+                "title": "Lambda Duration (ms)",
+                "metrics": [
+                  ["AWS/Lambda", "Duration", "FunctionName", "mockmate-question-generate-${Stage}", {"stat": "p99"}],
+                  ["AWS/Lambda", "Duration", "FunctionName", "mockmate-evaluation-trigger-${Stage}", {"stat": "p99"}]
+                ],
+                "period": 300,
+                "view": "timeSeries"
+              }
+            }
+          ]
+        }
+
+# ── Outputs (shown after sam deploy) ─────────────────────────────────────────
+Outputs:
+  ApiBaseUrl:
+    Description: "API Gateway base URL for Lambda showcase routes"
+    Value: !Sub "https://${MockMateApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}"
+    Export:
+      Name: !Sub "MockMateApiUrl-${Stage}"
+
+  QuestionGenerateUrl:
+    Description: "POST endpoint for question generation"
+    Value: !Sub "https://${MockMateApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}/questions/generate"
+
+  EvaluationTriggerUrl:
+    Description: "POST endpoint for evaluation trigger"
+    Value: !Sub "https://${MockMateApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}/evaluate/trigger"
+
+  SecretsArn:
+    Description: "ARN of Secrets Manager secret (update REPLACE_ME values)"
+    Value: !Ref MockMateSecrets
+
+  CloudWatchDashboard:
+    Description: "CloudWatch dashboard URL"
+    Value: !Sub "https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home#dashboards:name=MockMate-${Stage}"

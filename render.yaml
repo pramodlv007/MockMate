@@ -1,0 +1,167 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# MockMate — Render.com Infrastructure as Code
+# Push this file to GitHub → Render auto-creates/updates all services.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── API Gateway ─────────────────────────────────────────────────────────────
+  - type: web
+    name: mockmate-gateway
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile.service
+    dockerContext: ./backend
+    dockerBuildArgs:
+      SERVICE: services/gateway
+      PORT: "8000"
+    plan: starter
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      - key: AUTH_SERVICE_URL
+        value: http://mockmate-auth:8001
+      - key: INTERVIEW_SERVICE_URL
+        value: http://mockmate-interview:8004
+      - key: QUESTION_SERVICE_URL
+        value: http://mockmate-question:8003
+      - key: EVALUATION_SERVICE_URL
+        value: http://mockmate-evaluation:8005
+      - key: PROFILE_SERVICE_URL
+        value: http://mockmate-profile:8002
+      - key: FRONTEND_URL
+        sync: false                             # Set to your Vercel URL in dashboard
+      - key: SECRET_KEY
+        sync: false                             # Set manually in dashboard
+      - key: ALGORITHM
+        value: HS256
+
+  # ── Auth Service ─────────────────────────────────────────────────────────────
+  - type: web
+    name: mockmate-auth
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile.service
+    dockerContext: ./backend
+    dockerBuildArgs:
+      SERVICE: services/auth
+      PORT: "8001"
+    plan: starter
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      - key: POSTGRES_SERVER
+        sync: false
+      - key: POSTGRES_PORT
+        sync: false
+      - key: POSTGRES_USER
+        sync: false
+      - key: POSTGRES_PASSWORD
+        sync: false
+      - key: POSTGRES_DB
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: ALGORITHM
+        value: HS256
+
+  # ── Profile Service ───────────────────────────────────────────────────────────
+  - type: web
+    name: mockmate-profile
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile.service
+    dockerContext: ./backend
+    dockerBuildArgs:
+      SERVICE: services/profile
+      PORT: "8002"
+    plan: starter
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      - key: MONGO_URL
+        sync: false
+      - key: MINIO_ENDPOINT
+        sync: false
+      - key: MINIO_ACCESS_KEY
+        sync: false
+      - key: MINIO_SECRET_KEY
+        sync: false
+      - key: MINIO_BUCKET
+        value: mockmate-uploads
+
+  # ── Question Service ──────────────────────────────────────────────────────────
+  - type: web
+    name: mockmate-question
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile.service
+    dockerContext: ./backend
+    dockerBuildArgs:
+      SERVICE: services/question
+      PORT: "8003"
+    plan: starter
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+
+  # ── Interview Service ─────────────────────────────────────────────────────────
+  - type: web
+    name: mockmate-interview
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile.service
+    dockerContext: ./backend
+    dockerBuildArgs:
+      SERVICE: services/interview
+      PORT: "8004"
+    plan: starter
+    region: oregon
+    healthCheckPath: /health
+    disk:
+      name: uploads
+      mountPath: /app/uploads
+      sizeGB: 5
+    envVars:
+      - key: POSTGRES_SERVER
+        sync: false
+      - key: POSTGRES_PORT
+        sync: false
+      - key: POSTGRES_USER
+        sync: false
+      - key: POSTGRES_PASSWORD
+        sync: false
+      - key: POSTGRES_DB
+        sync: false
+      - key: QUESTION_SERVICE_URL
+        value: http://mockmate-question:8003
+      - key: EVALUATION_SERVICE_URL
+        value: http://mockmate-evaluation:8005
+      - key: SECRET_KEY
+        sync: false
+
+  # ── Evaluation Service ────────────────────────────────────────────────────────
+  - type: web
+    name: mockmate-evaluation
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile.service
+    dockerContext: ./backend
+    dockerBuildArgs:
+      SERVICE: services/evaluation
+      PORT: "8005"
+    plan: starter
+    region: oregon
+    healthCheckPath: /health
+    disk:
+      name: eval-uploads
+      mountPath: /app/uploads
+      sizeGB: 5
+    envVars:
+      - key: INTERVIEW_SERVICE_URL
+        value: http://mockmate-interview:8004
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: MOCKMATE_VLM_API_KEY
+        sync: false
+

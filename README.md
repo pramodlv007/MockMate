@@ -13,6 +13,11 @@
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker)](https://docker.com)
 [![Gemini](https://img.shields.io/badge/Google-Gemini_1.5-4285F4?style=for-the-badge&logo=google)](https://deepmind.google/technologies/gemini)
 
+[![Deploy](https://github.com/pramodlv007/MockMate/actions/workflows/deploy.yml/badge.svg)](https://github.com/pramodlv007/MockMate/actions/workflows/deploy.yml)
+[![Vercel](https://img.shields.io/badge/Frontend-Vercel-000000?style=for-the-badge&logo=vercel)](https://vercel.com)
+[![Render](https://img.shields.io/badge/Backend-Render-46E3B7?style=for-the-badge&logo=render)](https://render.com)
+[![AWS Lambda](https://img.shields.io/badge/Showcase-AWS_Lambda-FF9900?style=for-the-badge&logo=awslambda)](https://aws.amazon.com/lambda)
+
 </div>
 
 ---
@@ -92,6 +97,96 @@ MockMate is built as a **microservices architecture** — six independent FastAP
 | **Redis 7** | Session caching, rate limiting |
 | **MinIO** | S3-compatible object storage for video/audio files |
 | **RabbitMQ** | Message broker for async task queuing |
+
+---
+
+## 🚀 Production Deployment
+
+MockMate is deployed across a **hybrid cloud stack** optimised for cost and reliability (~$8/month total):
+
+```mermaid
+graph TB
+    User(["👤 User<br/>Browser"])
+
+    subgraph CF["☁️ Cloudflare (Free)"]
+        CDN["CDN + DDoS Protection<br/>yourdomain.com"]
+    end
+
+    subgraph Vercel["▲ Vercel (Free)"]
+        FE["React Frontend<br/>Vite + TypeScript"]
+    end
+
+    subgraph Render["🎨 Render ($7/mo)"]
+        GW["API Gateway :8000"]
+        AUTH["Auth Service :8001"]
+        PROF["Profile Service :8002"]
+        QUEST["Question Service :8003"]
+        INTV["Interview Service :8004"]
+        EVAL["Evaluation Service :8005"]
+        GW --> AUTH & PROF & QUEST & INTV & EVAL
+    end
+
+    subgraph Databases["🗄️ Managed Databases (Free Tier)"]
+        PG[("Supabase PostgreSQL<br/>Auth + Sessions")]
+        MONGO[("MongoDB Atlas M0<br/>Profiles")]
+        REDIS[("Upstash Redis<br/>Caching")]
+        R2[("Cloudflare R2<br/>Video Files")]
+    end
+
+    subgraph AWS["☁️ AWS (Showcase Layer ~$0.24/mo)"]
+        SM["Secrets Manager<br/>API Keys"]
+        subgraph Lambda["Lambda (Graviton2 ARM)"]
+            LQ["question_generate<br/>10 req/min limit"]
+            LE["evaluation_trigger<br/>3 req/hour limit"]
+        end
+        CW["CloudWatch<br/>Structured Logs + Dashboard"]
+        LQ & LE --> SM
+        LQ & LE --> CW
+    end
+
+    subgraph CICD["🔄 CI/CD — GitHub Actions (Free)"]
+        GA["Push to main →<br/>Test → Build → Deploy"]
+    end
+
+    User --> CDN
+    CDN --> FE
+    CDN --> GW
+    AUTH --> PG
+    INTV --> PG
+    PROF --> MONGO
+    QUEST --> REDIS
+    INTV --> R2
+    GW -.->|"showcase routes"| LQ & LE
+    GA -.->|"sam deploy"| Lambda
+    GA -.->|"vercel deploy"| FE
+    GA -.->|"deploy hooks"| GW
+```
+
+### CI/CD Flow
+
+```
+git push → GitHub Actions
+              ├── 🧪 Run tests + build frontend
+              ├── ▲  Deploy frontend → Vercel (prod)
+              ├── 🎨 Trigger Render redeploys (all 6 services)
+              └── ☁️  sam deploy → AWS Lambda (question + evaluation)
+```
+
+### Cost Breakdown
+
+| Service | Plan | Cost |
+|---|---|---|
+| Vercel (frontend) | Hobby | Free |
+| Render (6 microservices) | Starter | $7/mo |
+| MongoDB Atlas (profiles) | M0 | Free |
+| Supabase (PostgreSQL) | Free | Free |
+| Upstash (Redis) | Free | Free |
+| Cloudflare R2 (files) | Free 10GB | Free |
+| Cloudflare (DNS + CDN) | Free | Free |
+| AWS Lambda (2 routes) | Free tier | ~$0 |
+| AWS Secrets Manager | 1 secret | ~$0.24/mo |
+| Domain (.com) | Annual | ~$1/mo |
+| **Total** | | **~$8/month** |
 
 ---
 
@@ -284,28 +379,46 @@ npm run dev
 
 ```
 MockMate/
+├── .github/
+│   ├── workflows/
+│   │   └── deploy.yml           # CI/CD: test → Vercel → Render → AWS Lambda
+│   └── SECRETS_SETUP.md         # Guide for adding GitHub secrets
+├── aws/                         # AWS Lambda showcase layer
+│   ├── lambda/
+│   │   ├── question_generate/   # Lambda: POST /questions/generate
+│   │   │   ├── handler.py       # FastAPI + Mangum + Secrets Manager
+│   │   │   └── requirements.txt
+│   │   └── evaluation_trigger/  # Lambda: POST /evaluate/trigger
+│   │       ├── handler.py       # Async pipeline + CloudWatch logging
+│   │       └── requirements.txt
+│   ├── template.yaml            # AWS SAM infrastructure template
+│   ├── samconfig.toml           # SAM deploy defaults
+│   └── README.md                # AWS setup guide
 ├── backend/
 │   ├── common/                  # Shared DB config, utilities
 │   ├── services/
-│   │   ├── gateway/             # API Gateway (port 8000)
+│   │   ├── gateway/             # API Gateway (port 8000) — JWT + proxy
 │   │   ├── auth/                # Auth Service (port 8001)
 │   │   ├── profile/             # Profile Service (port 8002)
-│   │   ├── question/            # Question Service (port 8003)
+│   │   ├── question/            # Question Service (port 8003) — rate limited
 │   │   ├── interview/           # Interview Service (port 8004)
-│   │   └── evaluation/          # Evaluation Service (port 8005)
-│   ├── Dockerfile.service
+│   │   └── evaluation/          # Evaluation Service (port 8005) — rate limited
+│   ├── Dockerfile.service       # Multi-service Dockerfile
 │   ├── requirements.txt
-│   └── .env
+│   ├── .env                     # Real keys — never committed
+│   └── .env.example             # Template with cloud URLs
 ├── frontend/
 │   ├── src/
 │   │   ├── pages/               # Home, Login, Signup, InterviewRoom, Results, History, Profile
 │   │   ├── components/          # Reusable UI components
 │   │   ├── context/             # Auth context
 │   │   └── api.ts               # API client layer
+│   ├── vercel.json              # Vercel SPA routing + cache config
 │   └── package.json
-├── docker-compose.yml           # Full production stack
+├── render.yaml                  # Render IaC — all 6 services declared
+├── docker-compose.yml           # Full local production stack
 ├── docker-compose.dev.yml       # Infrastructure only (dev)
-└── start_services.ps1           # Dev startup script
+└── start_services.ps1           # Dev startup script (Windows)
 ```
 
 ---

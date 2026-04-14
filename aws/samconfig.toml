@@ -1,0 +1,37 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# AWS SAM Deploy Config — auto-generated on first `sam deploy --guided`
+# Edit values here instead of passing flags every time.
+# ─────────────────────────────────────────────────────────────────────────────
+
+version = 0.1
+
+[default]
+[default.global.parameters]
+stack_name = "mockmate"
+
+[default.build.parameters]
+cached = true
+parallel = true
+
+[default.deploy.parameters]
+capabilities           = "CAPABILITY_IAM"
+confirm_changeset      = false
+fail_on_empty_changeset = false
+resolve_s3             = true
+region                 = "us-east-1"
+s3_prefix              = "mockmate"
+
+# ── Parameter overrides ───────────────────────────────────────────────────────
+# Replace the InterviewServiceURL with your actual Render service URL
+# after first Render deploy.
+parameter_overrides    = [
+  "InterviewServiceURL=https://mockmate-interview.onrender.com",
+  "Stage=prod"
+]
+
+# Tags applied to all AWS resources created by this stack
+tags = [
+  "Project=MockMate",
+  "ManagedBy=SAM",
+  "Environment=prod"
+]

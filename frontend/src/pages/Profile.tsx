@@ -58,7 +58,7 @@ export const Profile = () => {
                     <UserIcon size={40} className="text-white" />
                 </div>
                 <div>
-                    <h1 className="text-2xl font-bold">{authUser.username}</h1>
+                    <h1 className="text-2xl font-bold">{authUser.full_name || authUser.email.split('@')[0]}</h1>
                     <p className="text-slate-400">{authUser.email}</p>
                 </div>
             </div>

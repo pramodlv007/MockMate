@@ -1,4 +1,4 @@
-﻿"""
+"""
 MockMate Evaluation Service â€” Port 8005
 Orchestrates the full post-interview evaluation pipeline using Gemini (primary) + OpenAI (fallback):
   Agent 1 (Scribe)     - Whisper / Gemini audio transcription
@@ -10,7 +10,10 @@ Updates the interview session in the Interview Service DB on completion.
 import os, json, re, base64, httpx
 from pathlib import Path
 from typing import Optional, List
-from fastapi import FastAPI, BackgroundTasks, HTTPException
+from fastapi import FastAPI, BackgroundTasks, HTTPException, Request
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from pydantic import BaseModel
 from dotenv import dotenv_values
 
@@ -45,7 +48,12 @@ if OPENAI_API_KEY:
     except Exception as e:
         print(f"[EvalService] OpenAI init error: {e}")
 
+# ── Rate limiter: 3 evaluations/hour per IP — each call costs Whisper + LLM ─
+limiter = Limiter(key_func=get_remote_address)
+
 app = FastAPI(title="MockMate Evaluation Service", version="3.0.0")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 # â”€â”€â”€ Schemas â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -449,12 +457,27 @@ async def _run_evaluation(req: EvaluateRequest):
 # â”€â”€â”€ Endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "evaluation", "gemini": bool(gemini_model), "openai": bool(openai_client)}
+    return {
+        "status": "ok",
+        "service": "evaluation",
+        "gemini": bool(gemini_model),
+        "openai": bool(openai_client),
+        "rate_limit": "3/hour per IP",
+    }
 
 
 @app.post("/evaluation/start", response_model=EvaluateResponse)
-async def start_evaluation(req: EvaluateRequest, background_tasks: BackgroundTasks):
-    """Kick off the evaluation pipeline asynchronously."""
+@limiter.limit("3/hour")
+async def start_evaluation(request: Request, req: EvaluateRequest, background_tasks: BackgroundTasks):
+    """
+    Kick off the evaluation pipeline asynchronously.
+    Rate limited to 3 evaluations/hour per IP — each call invokes Whisper + Gemini/GPT-4o Vision.
+    Poll GET /interviews/{id} for completion status.
+    """
+    if not req.video_path:
+        raise HTTPException(status_code=400, detail="video_path is required to start evaluation.")
+
+    print(f"[EvalService] Evaluation queued for interview_id={req.interview_id}")
     background_tasks.add_task(_run_evaluation, req)
     return EvaluateResponse(
         interview_id=req.interview_id,
