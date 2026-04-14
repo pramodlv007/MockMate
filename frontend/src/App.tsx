@@ -21,7 +21,7 @@ function AppRoutes() {
   const { isAuthenticated } = useAuth();
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-50 font-sans selection:bg-indigo-500/30">
+    <div className="min-h-screen text-slate-50" style={{ background: '#060611', fontFamily: "'Inter', system-ui, sans-serif" }}>
       {isAuthenticated && <Header />}
       <main className={isAuthenticated ? "container mx-auto px-4 py-8" : ""}>
         <Routes>

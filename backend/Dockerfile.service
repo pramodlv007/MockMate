@@ -1,0 +1,19 @@
+FROM python:3.11-slim
+
+ARG SERVICE
+ARG PORT=8000
+
+WORKDIR /app
+
+# Install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy entire backend source so relative imports work
+COPY . .
+
+# Expose the service port
+EXPOSE ${PORT}
+
+# Run the specified microservice
+CMD uvicorn ${SERVICE/\//.}.main:app --host 0.0.0.0 --port ${PORT}

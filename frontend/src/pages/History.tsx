@@ -32,7 +32,7 @@ export const History = () => {
                         >
                             <div className="flex items-center justify-between">
                                 <div className="space-y-1 flex-1">
-                                    <h3 className="font-semibold text-lg group-hover:text-indigo-400 transition-colors">
+                                    <h3 className="font-semibold text-lg group-hover:text-emerald-400 transition-colors">
                                         {interview.company_name}
                                     </h3>
                                     <p className="text-sm text-slate-400 flex items-center gap-2">
@@ -45,7 +45,7 @@ export const History = () => {
                                     {interview.ai_score ? (
                                         <div className="text-right">
                                             <div className="text-xs text-slate-500 uppercase">Score</div>
-                                            <div className="text-xl font-bold text-indigo-400">{interview.ai_score}</div>
+                                            <div className="text-xl font-bold text-emerald-400">{interview.ai_score}</div>
                                         </div>
                                     ) : (
                                         <span className="text-xs px-2 py-1 rounded bg-yellow-500/10 text-yellow-500">Processing</span>

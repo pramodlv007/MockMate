@@ -2,13 +2,36 @@ fastapi
 uvicorn
 sqlalchemy
 pydantic
+pydantic-settings
 python-multipart
 python-dotenv
 httpx
 pytest
-# For AI integration (placeholders)
+
+# Auth
+passlib[bcrypt]
+python-jose[cryptography]
+
+# Database Drivers
+psycopg2-binary
+motor # Async MongoDB
+redis
+
+# Storage
+minio
+
+# AI Integration
 openai
 google-generativeai
-okta-jwt-verifier # if we add auth later, but for now maybe just simple
-passlib[bcrypt]
-python-jose
+tavily-python
+
+# Video Processing (Future)
+moviepy
+opencv-python-headless
+
+# Utilities
+email-validator
+requests
+tenacity
+slowapi
+
