@@ -35,8 +35,8 @@ ALLOWED_ORIGINS = [
     "http://127.0.0.1:3000",
     # ── Production — Vercel (auto HTTPS) ───────────────────────────────────────
     # Replace with your actual Vercel URL after first deploy:
+    "https://mockmate-frontend-ten.vercel.app",
     "https://mockmate.vercel.app",
-    "https://mock-mate.vercel.app",
     # ── Production — Custom domain (update after DNS setup) ────────────────────
     # "https://yourdomain.com",
     # "https://www.yourdomain.com",
