@@ -17,8 +17,6 @@ services:
     envVars:
       - key: SERVICE
         value: services.gateway
-      - key: PORT
-        value: "8000"
       - key: AUTH_SERVICE_URL
         value: http://mockmate-auth:8001
       - key: INTERVIEW_SERVICE_URL
@@ -48,8 +46,6 @@ services:
     envVars:
       - key: SERVICE
         value: services.auth
-      - key: PORT
-        value: "8001"
       - key: POSTGRES_SERVER
         sync: false
       - key: POSTGRES_PORT
@@ -77,8 +73,6 @@ services:
     envVars:
       - key: SERVICE
         value: services.profile
-      - key: PORT
-        value: "8002"
       - key: MONGO_URL
         sync: false
       - key: MINIO_ENDPOINT
@@ -102,8 +96,6 @@ services:
     envVars:
       - key: SERVICE
         value: services.question
-      - key: PORT
-        value: "8003"
       - key: GOOGLE_API_KEY
         sync: false
       - key: OPENAI_API_KEY
@@ -121,8 +113,6 @@ services:
     envVars:
       - key: SERVICE
         value: services.interview
-      - key: PORT
-        value: "8004"
       - key: POSTGRES_SERVER
         sync: false
       - key: POSTGRES_PORT
@@ -152,8 +142,6 @@ services:
     envVars:
       - key: SERVICE
         value: services.evaluation
-      - key: PORT
-        value: "8005"
       - key: INTERVIEW_SERVICE_URL
         value: http://mockmate-interview:8004
       - key: GOOGLE_API_KEY

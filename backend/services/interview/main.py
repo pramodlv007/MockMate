@@ -22,6 +22,11 @@ app = FastAPI(title="MockMate Interview Service", version="2.0.0")
 # CORS — Handled centrally by Gateway.
 
 
+@app.get("/health")
+def health():
+    return {"status": "ok", "service": "interview"}
+
+
 QUESTION_SERVICE_URL   = os.getenv("QUESTION_SERVICE_URL",   "http://localhost:8003")
 EVALUATION_SERVICE_URL = os.getenv("EVALUATION_SERVICE_URL", "http://localhost:8005")
 UPLOAD_DIR = Path(__file__).parent.parent.parent / "uploads" / "videos"
