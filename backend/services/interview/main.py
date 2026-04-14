@@ -3,14 +3,15 @@ MockMate Interview Service — Port 8004
 Manages interview sessions: create, fetch, upload video, patch evaluation results.
 Calls Question Service to generate questions on session creation.
 """
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Header
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from common.database import get_db, engine
 from . import models
 from .schemas import InterviewSessionOut, EvaluationPatch
 from pathlib import Path
-import httpx, uuid, os
+import httpx, uuid, os, traceback
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -19,8 +20,14 @@ load_dotenv(Path(__file__).parent.parent.parent / ".env")
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="MockMate Interview Service", version="2.0.0")
-# CORS — Handled centrally by Gateway.
 
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    tb = traceback.format_exc()
+    return JSONResponse(
+        status_code=500,
+        content={"error": str(exc), "type": type(exc).__name__, "traceback": tb}
+    )
 
 @app.get("/health")
 def health():
