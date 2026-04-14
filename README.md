@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🎯 MockMate
+#  MockMate
 
 ### AI-Powered Technical Interview Coach
 
