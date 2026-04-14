@@ -11,7 +11,7 @@ services:
     runtime: docker
     dockerfilePath: ./backend/Dockerfile.service
     dockerContext: ./backend
-    plan: starter
+    plan: free
     region: oregon
     healthCheckPath: /health
     envVars:
@@ -42,7 +42,7 @@ services:
     runtime: docker
     dockerfilePath: ./backend/Dockerfile.service
     dockerContext: ./backend
-    plan: starter
+    plan: free
     region: oregon
     healthCheckPath: /health
     envVars:
@@ -71,7 +71,7 @@ services:
     runtime: docker
     dockerfilePath: ./backend/Dockerfile.service
     dockerContext: ./backend
-    plan: starter
+    plan: free
     region: oregon
     healthCheckPath: /health
     envVars:
@@ -96,7 +96,7 @@ services:
     runtime: docker
     dockerfilePath: ./backend/Dockerfile.service
     dockerContext: ./backend
-    plan: starter
+    plan: free
     region: oregon
     healthCheckPath: /health
     envVars:
@@ -115,13 +115,9 @@ services:
     runtime: docker
     dockerfilePath: ./backend/Dockerfile.service
     dockerContext: ./backend
-    plan: starter
+    plan: free
     region: oregon
     healthCheckPath: /health
-    disk:
-      name: uploads
-      mountPath: /app/uploads
-      sizeGB: 5
     envVars:
       - key: SERVICE
         value: services/interview
@@ -150,13 +146,9 @@ services:
     runtime: docker
     dockerfilePath: ./backend/Dockerfile.service
     dockerContext: ./backend
-    plan: starter
+    plan: free
     region: oregon
     healthCheckPath: /health
-    disk:
-      name: eval-uploads
-      mountPath: /app/uploads
-      sizeGB: 5
     envVars:
       - key: SERVICE
         value: services/evaluation
