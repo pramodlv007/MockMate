@@ -1,0 +1,13 @@
+mangum
+fastapi
+pydantic
+boto3
+slowapi
+openai
+google-generativeai
+python-dotenv
+httpx
+tenacity
+moviepy
+Pillow
+opencv-python-headless

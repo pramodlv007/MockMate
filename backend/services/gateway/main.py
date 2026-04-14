@@ -26,12 +26,20 @@ ALGORITHM  = os.getenv("ALGORITHM",  "HS256")
 
 # ─── CORS ─────────────────────────────────────────────────────────────────────
 ALLOWED_ORIGINS = [
+    # ── Local development ──────────────────────────────────────────────────────
     os.getenv("FRONTEND_URL", "http://localhost:5173"),
     "http://localhost:5174",
     "http://localhost:3000",
     "http://127.0.0.1:5173",
     "http://127.0.0.1:5174",
     "http://127.0.0.1:3000",
+    # ── Production — Vercel (auto HTTPS) ───────────────────────────────────────
+    # Replace with your actual Vercel URL after first deploy:
+    "https://mockmate.vercel.app",
+    "https://mock-mate.vercel.app",
+    # ── Production — Custom domain (update after DNS setup) ────────────────────
+    # "https://yourdomain.com",
+    # "https://www.yourdomain.com",
 ]
 
 app.add_middleware(
