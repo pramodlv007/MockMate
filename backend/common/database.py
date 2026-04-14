@@ -26,17 +26,19 @@ SQLALCHEMY_DATABASE_URL = URL.create(
     query=query_params
 )
 
-# PgBouncer (Supabase Transaction Pooler) does NOT support prepared statements.
-# Set prepare_threshold=0 to disable them. pool_pre_ping keeps connections healthy.
-connect_args = {}
-if POSTGRES_SERVER != "localhost":
-    connect_args["prepare_threshold"] = 0
-
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
-    connect_args=connect_args,
     pool_pre_ping=True,
 )
+
+# PgBouncer (Supabase Transaction Pooler) does NOT support prepared statements.
+# Disable them via an event hook so every connection sets prepare_threshold=0.
+if POSTGRES_SERVER != "localhost":
+    from sqlalchemy import event as _sa_event
+
+    @_sa_event.listens_for(engine, "connect")
+    def _disable_prepared_statements(dbapi_connection, connection_record):
+        dbapi_connection.prepare_threshold = 0
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
