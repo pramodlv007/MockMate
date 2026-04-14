@@ -1,0 +1,1 @@
+# MockMate shared common library

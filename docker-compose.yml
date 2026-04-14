@@ -1,36 +1,211 @@
 version: '3.8'
 
+# ─────────────────────────────────────────────────────────────────────────────
+# MockMate — Production Microservices Stack (Local Dev)
+# Start infra first:  docker compose -f docker-compose.dev.yml up -d
+# Then run services:  .\start_services.ps1
+# ─────────────────────────────────────────────────────────────────────────────
+
 services:
-  backend:
-    build: ./backend
+
+  # ── Infrastructure ──────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: mockmate_postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: mockmate
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: mockmate_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mockmate"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: mockmate_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  mongo:
+    image: mongo:6-jammy
+    container_name: mockmate_mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: mockmate
+      MONGO_INITDB_ROOT_PASSWORD: password
+    volumes:
+      - mongo_data:/data/db
+
+  minio:
+    image: minio/minio
+    container_name: mockmate_minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: mockmate
+      MINIO_ROOT_PASSWORD: password
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+
+  # ── API Gateway ─────────────────────────────────────────────────────────────
+  gateway:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE: services/gateway
+        PORT: "8000"
+    container_name: mockmate_gateway
+    restart: unless-stopped
     ports:
       - "8000:8000"
-    volumes:
-      - ./backend/uploads:/app/uploads
-      - ./backend/app:/app/app
+    env_file: ./backend/.env
     environment:
-      - DATABASE_URL=sqlite:///./mockmate.db
-      # Add OPENAI_API_KEY environment variable if available
-    networks:
-      - mockmate-net
+      AUTH_SERVICE_URL:       http://auth:8001
+      INTERVIEW_SERVICE_URL:  http://interview:8004
+      QUESTION_SERVICE_URL:   http://question:8003
+      EVALUATION_SERVICE_URL: http://evaluation:8005
+      PROFILE_SERVICE_URL:    http://profile:8002
+    depends_on:
+      - auth
+      - interview
+      - question
+      - evaluation
+      - profile
 
+  # ── Auth Service ─────────────────────────────────────────────────────────────
+  auth:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE: services/auth
+        PORT: "8001"
+    container_name: mockmate_auth
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    env_file: ./backend/.env
+    environment:
+      POSTGRES_SERVER: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ── Profile Service ──────────────────────────────────────────────────────────
+  profile:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE: services/profile
+        PORT: "8002"
+    container_name: mockmate_profile
+    restart: unless-stopped
+    ports:
+      - "8002:8002"
+    env_file: ./backend/.env
+    environment:
+      MONGO_URL: mongodb://mockmate:password@mongo:27017
+      MINIO_ENDPOINT: minio:9000
+    depends_on:
+      - mongo
+      - minio
+
+  # ── Question Service ─────────────────────────────────────────────────────────
+  question:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE: services/question
+        PORT: "8003"
+    container_name: mockmate_question
+    restart: unless-stopped
+    ports:
+      - "8003:8003"
+    env_file: ./backend/.env
+
+  # ── Interview Service ────────────────────────────────────────────────────────
+  interview:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE: services/interview
+        PORT: "8004"
+    container_name: mockmate_interview
+    restart: unless-stopped
+    ports:
+      - "8004:8004"
+    env_file: ./backend/.env
+    environment:
+      POSTGRES_SERVER:        postgres
+      QUESTION_SERVICE_URL:   http://question:8003
+      EVALUATION_SERVICE_URL: http://evaluation:8005
+    volumes:
+      - uploads_data:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      question:
+        condition: service_started
+
+  # ── Evaluation Service ───────────────────────────────────────────────────────
+  evaluation:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE: services/evaluation
+        PORT: "8005"
+    container_name: mockmate_evaluation
+    restart: unless-stopped
+    ports:
+      - "8005:8005"
+    env_file: ./backend/.env
+    environment:
+      INTERVIEW_SERVICE_URL: http://interview:8004
+    volumes:
+      - uploads_data:/app/uploads
+    depends_on:
+      - interview
+
+  # ── Frontend ─────────────────────────────────────────────────────────────────
   frontend:
     build: ./frontend
+    container_name: mockmate_frontend
+    restart: unless-stopped
     ports:
       - "3000:80"
-    depends_on:
-      - backend
     environment:
-       # We need to build with this env var or pass it at runtime if using a runtime-config script
-       # Since Vite builds statically, we must build with the ENV.
-       # Docker compose environment for build args usually requires `args` in build section.
-       # For simplicity, we assume frontend talks to localhost:8000 (browser side).
-       # But inside docker network, browser is outside. 
-       # So frontend (browser) -> localhost:8000 is correct for local dev.
-       - VITE_API_URL=http://localhost:8000
-    networks:
-      - mockmate-net
+      VITE_API_URL: http://localhost:8000
+    depends_on:
+      - gateway
 
-networks:
-  mockmate-net:
-    driver: bridge
+volumes:
+  postgres_data:
+  redis_data:
+  mongo_data:
+  minio_data:
+  uploads_data:

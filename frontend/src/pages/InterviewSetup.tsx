@@ -8,12 +8,14 @@ export const InterviewSetup = () => {
     const [loading, setLoading] = useState(false);
     const [formData, setFormData] = useState({
         company_name: '',
+        target_role: '',
         job_description: '',
         questions_count: 5,
         duration_minutes: 15,
         interviewer_persona: 'neutral',
         strictness_level: 'standard'
     });
+
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -53,6 +55,20 @@ export const InterviewSetup = () => {
                             />
                         </div>
                         <div>
+                            <label className="block text-sm font-medium text-slate-300 mb-2">Target Role</label>
+                            <input
+                                type="text"
+                                required
+                                className="input-field"
+                                placeholder="e.g. Senior Backend Engineer"
+                                value={formData.target_role}
+                                onChange={e => setFormData({ ...formData, target_role: e.target.value })}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="grid md:grid-cols-2 gap-4">
+                        <div>
                             <label className="block text-sm font-medium text-slate-300 mb-2">Duration (Minutes)</label>
                             <input
                                 type="number"
@@ -63,7 +79,19 @@ export const InterviewSetup = () => {
                                 onChange={e => setFormData({ ...formData, duration_minutes: parseInt(e.target.value) })}
                             />
                         </div>
+                        <div>
+                            <label className="block text-sm font-medium text-slate-300 mb-2">Number of Questions</label>
+                            <input
+                                type="number"
+                                min={3}
+                                max={15}
+                                className="input-field"
+                                value={formData.questions_count}
+                                onChange={e => setFormData({ ...formData, questions_count: parseInt(e.target.value) })}
+                            />
+                        </div>
                     </div>
+
 
                     <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Job Description</label>
@@ -82,7 +110,7 @@ export const InterviewSetup = () => {
                     {/* Persona Selector */}
                     <div className="card space-y-4">
                         <h3 className="text-lg font-semibold flex items-center gap-2">
-                            <UserCircle className="text-indigo-400" size={20} />
+                            <UserCircle className="text-emerald-400" size={20} />
                             Interviewer Persona
                         </h3>
                         <div className="grid grid-cols-1 gap-2">
@@ -95,9 +123,9 @@ export const InterviewSetup = () => {
                                     key={p.id}
                                     type="button"
                                     onClick={() => setFormData({ ...formData, interviewer_persona: p.id })}
-                                    className={`text-left p-3 rounded-lg border transition-all ${formData.interviewer_persona === p.id
-                                            ? 'bg-indigo-500/10 border-indigo-500 text-white'
-                                            : 'bg-slate-800/50 border-slate-700 text-slate-400 hover:border-slate-500'
+                                    className={`text-left p-3 rounded-xl border transition-all duration-300 ${formData.interviewer_persona === p.id
+                                        ? 'bg-emerald-500/10 border-emerald-500/30 text-white'
+                                        : 'bg-white/3 border-white/8 text-slate-400 hover:border-white/15'
                                         }`}
                                 >
                                     <div className="font-medium">{p.name}</div>
@@ -110,7 +138,7 @@ export const InterviewSetup = () => {
                     {/* Strictness Selector */}
                     <div className="card space-y-4">
                         <h3 className="text-lg font-semibold flex items-center gap-2">
-                            <ShieldAlert className="text-orange-400" size={20} />
+                            <ShieldAlert className="text-cyan-400" size={20} />
                             Evaluation Strictness
                         </h3>
                         <div className="grid grid-cols-1 gap-2">
@@ -123,9 +151,9 @@ export const InterviewSetup = () => {
                                     key={s.id}
                                     type="button"
                                     onClick={() => setFormData({ ...formData, strictness_level: s.id })}
-                                    className={`text-left p-3 rounded-lg border transition-all ${formData.strictness_level === s.id
-                                            ? 'bg-orange-500/10 border-orange-500 text-white'
-                                            : 'bg-slate-800/50 border-slate-700 text-slate-400 hover:border-slate-500'
+                                    className={`text-left p-3 rounded-xl border transition-all duration-300 ${formData.strictness_level === s.id
+                                        ? 'bg-cyan-500/10 border-cyan-500/30 text-white'
+                                        : 'bg-white/3 border-white/8 text-slate-400 hover:border-white/15'
                                         }`}
                                 >
                                     <div className="font-medium">{s.name}</div>
@@ -144,11 +172,11 @@ export const InterviewSetup = () => {
                             min={3}
                             max={15}
                             step={1}
-                            className="flex-1 accent-indigo-500"
+                            className="flex-1 accent-emerald-500"
                             value={formData.questions_count}
                             onChange={e => setFormData({ ...formData, questions_count: parseInt(e.target.value) })}
                         />
-                        <span className="text-xl font-bold text-indigo-400 w-8">{formData.questions_count}</span>
+                        <span className="text-xl font-bold text-emerald-400 w-8">{formData.questions_count}</span>
                     </div>
                 </div>
 

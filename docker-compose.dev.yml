@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  # Structured Data
+  postgres:
+    image: postgres:15-alpine
+    container_name: mockmate_postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: mockmate
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: mockmate_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # Unstructured Data (Resumes, AI Logs)
+  mongo:
+    image: mongo:6-jammy
+    container_name: mockmate_mongo
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: mockmate
+      MONGO_INITDB_ROOT_PASSWORD: password
+    volumes:
+      - mongo_data:/data/db
+
+  # Caching & Session
+  redis:
+    image: redis:7-alpine
+    container_name: mockmate_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  # Object Storage (S3 Compatible)
+  minio:
+    image: minio/minio
+    container_name: mockmate_minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: mockmate
+      MINIO_ROOT_PASSWORD: password
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+
+  # Message Broker
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: mockmate_rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: mockmate
+      RABBITMQ_DEFAULT_PASS: password
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+volumes:
+  postgres_data:
+  mongo_data:
+  redis_data:
+  minio_data:
+  rabbitmq_data:
