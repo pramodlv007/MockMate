@@ -18,15 +18,15 @@ services:
       - key: SERVICE
         value: services.gateway
       - key: AUTH_SERVICE_URL
-        value: http://mockmate-auth:8001
+        value: https://mockmate-auth.onrender.com
       - key: INTERVIEW_SERVICE_URL
-        value: http://mockmate-interview:8004
+        value: https://mockmate-interview.onrender.com
       - key: QUESTION_SERVICE_URL
-        value: http://mockmate-question:8003
+        value: https://mockmate-question.onrender.com
       - key: EVALUATION_SERVICE_URL
-        value: http://mockmate-evaluation:8005
+        value: https://mockmate-evaluation.onrender.com
       - key: PROFILE_SERVICE_URL
-        value: http://mockmate-profile:8002
+        value: https://mockmate-profile.onrender.com
       - key: FRONTEND_URL
         sync: false                             # Set to your Vercel URL in dashboard
       - key: SECRET_KEY
@@ -124,9 +124,9 @@ services:
       - key: POSTGRES_DB
         sync: false
       - key: QUESTION_SERVICE_URL
-        value: http://mockmate-question:8003
+        value: https://mockmate-question.onrender.com
       - key: EVALUATION_SERVICE_URL
-        value: http://mockmate-evaluation:8005
+        value: https://mockmate-evaluation.onrender.com
       - key: SECRET_KEY
         sync: false
 
@@ -143,7 +143,7 @@ services:
       - key: SERVICE
         value: services.evaluation
       - key: INTERVIEW_SERVICE_URL
-        value: http://mockmate-interview:8004
+        value: https://mockmate-interview.onrender.com
       - key: GOOGLE_API_KEY
         sync: false
       - key: OPENAI_API_KEY
