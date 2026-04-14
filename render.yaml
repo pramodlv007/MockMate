@@ -16,7 +16,7 @@ services:
     healthCheckPath: /health
     envVars:
       - key: SERVICE
-        value: services/gateway
+        value: services.gateway
       - key: PORT
         value: "8000"
       - key: AUTH_SERVICE_URL
@@ -47,7 +47,7 @@ services:
     healthCheckPath: /health
     envVars:
       - key: SERVICE
-        value: services/auth
+        value: services.auth
       - key: PORT
         value: "8001"
       - key: POSTGRES_SERVER
@@ -76,7 +76,7 @@ services:
     healthCheckPath: /health
     envVars:
       - key: SERVICE
-        value: services/profile
+        value: services.profile
       - key: PORT
         value: "8002"
       - key: MONGO_URL
@@ -101,7 +101,7 @@ services:
     healthCheckPath: /health
     envVars:
       - key: SERVICE
-        value: services/question
+        value: services.question
       - key: PORT
         value: "8003"
       - key: GOOGLE_API_KEY
@@ -120,7 +120,7 @@ services:
     healthCheckPath: /health
     envVars:
       - key: SERVICE
-        value: services/interview
+        value: services.interview
       - key: PORT
         value: "8004"
       - key: POSTGRES_SERVER
@@ -151,7 +151,7 @@ services:
     healthCheckPath: /health
     envVars:
       - key: SERVICE
-        value: services/evaluation
+        value: services.evaluation
       - key: PORT
         value: "8005"
       - key: INTERVIEW_SERVICE_URL
