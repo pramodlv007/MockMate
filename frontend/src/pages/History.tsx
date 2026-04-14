@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { endpoints, type InterviewSession } from '../api';
-import { Calendar, ChevronRight, Play } from 'lucide-react';
+import { Calendar, ChevronRight, Play, Trophy, Activity } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -42,13 +42,16 @@ export const History = () => {
                                 </div>
 
                                 <div className="flex items-center gap-6">
-                                    {interview.ai_score ? (
-                                        <div className="text-right">
-                                            <div className="text-xs text-slate-500 uppercase">Score</div>
-                                            <div className="text-xl font-bold text-emerald-400">{interview.ai_score}</div>
+                                    {interview.overall_score ? (
+                                        <div className="flex items-center text-sm font-medium text-emerald-400 bg-emerald-400/10 px-3 py-1 rounded-full whitespace-nowrap">
+                                            <Trophy className="w-4 h-4 mr-1.5" />
+                                            Score: {interview.overall_score}/100
                                         </div>
                                     ) : (
-                                        <span className="text-xs px-2 py-1 rounded bg-yellow-500/10 text-yellow-500">Processing</span>
+                                        <div className="flex items-center text-sm font-medium text-gray-400 bg-gray-800/50 border border-gray-700/50 px-3 py-1 rounded-full whitespace-nowrap">
+                                            <Activity className="w-4 h-4 mr-1.5" />
+                                            Pending Evaluation
+                                        </div>
                                     )}
                                 </div>
                             </div>
