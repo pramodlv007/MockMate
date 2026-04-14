@@ -1,14 +1,6 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # MockMate — Render.com Infrastructure as Code
 # Push this file to GitHub → Render auto-creates/updates all services.
-#
-# Setup steps:
-#  1. render.com → New → Blueprint → connect your GitHub repo
-#  2. Set the environment variables below in the Render dashboard
-#  3. Each service gets a unique *.onrender.com URL automatically
-#
-# Internal URLs use Render's private network (free, no egress costs):
-#   http://mockmate-auth:8001  (internal only, not exposed to internet)
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
@@ -22,7 +14,7 @@ services:
     dockerBuildArgs:
       SERVICE: services/gateway
       PORT: "8000"
-    plan: starter          # $7/mo — always-on (no cold starts)
+    plan: starter
     region: oregon
     healthCheckPath: /health
     envVars:
@@ -37,9 +29,9 @@ services:
       - key: PROFILE_SERVICE_URL
         value: http://mockmate-profile:8002
       - key: FRONTEND_URL
-        value: https://yourdomain.com          # ← Replace with your Vercel URL
+        sync: false                             # Set to your Vercel URL in dashboard
       - key: SECRET_KEY
-        sync: false                             # Set manually in Render dashboard
+        sync: false                             # Set manually in dashboard
       - key: ALGORITHM
         value: HS256
 
@@ -57,25 +49,15 @@ services:
     healthCheckPath: /health
     envVars:
       - key: POSTGRES_SERVER
-        fromDatabase:
-          name: mockmate-postgres
-          property: host
+        sync: false
       - key: POSTGRES_PORT
-        fromDatabase:
-          name: mockmate-postgres
-          property: port
+        sync: false
       - key: POSTGRES_USER
-        fromDatabase:
-          name: mockmate-postgres
-          property: user
+        sync: false
       - key: POSTGRES_PASSWORD
-        fromDatabase:
-          name: mockmate-postgres
-          property: password
+        sync: false
       - key: POSTGRES_DB
-        fromDatabase:
-          name: mockmate-postgres
-          property: database
+        sync: false
       - key: SECRET_KEY
         sync: false
       - key: ALGORITHM
@@ -95,9 +77,9 @@ services:
     healthCheckPath: /health
     envVars:
       - key: MONGO_URL
-        sync: false                             # Set from MongoDB Atlas in dashboard
+        sync: false
       - key: MINIO_ENDPOINT
-        sync: false                             # Set from Cloudflare R2 in dashboard
+        sync: false
       - key: MINIO_ACCESS_KEY
         sync: false
       - key: MINIO_SECRET_KEY
@@ -119,7 +101,7 @@ services:
     healthCheckPath: /health
     envVars:
       - key: GOOGLE_API_KEY
-        sync: false                             # Set in dashboard — pulls from AWS Secrets Manager or manual
+        sync: false
       - key: OPENAI_API_KEY
         sync: false
 
@@ -138,28 +120,18 @@ services:
     disk:
       name: uploads
       mountPath: /app/uploads
-      sizeGB: 5                                 # 5GB persistent disk for video uploads
+      sizeGB: 5
     envVars:
       - key: POSTGRES_SERVER
-        fromDatabase:
-          name: mockmate-postgres
-          property: host
+        sync: false
       - key: POSTGRES_PORT
-        fromDatabase:
-          name: mockmate-postgres
-          property: port
+        sync: false
       - key: POSTGRES_USER
-        fromDatabase:
-          name: mockmate-postgres
-          property: user
+        sync: false
       - key: POSTGRES_PASSWORD
-        fromDatabase:
-          name: mockmate-postgres
-          property: password
+        sync: false
       - key: POSTGRES_DB
-        fromDatabase:
-          name: mockmate-postgres
-          property: database
+        sync: false
       - key: QUESTION_SERVICE_URL
         value: http://mockmate-question:8003
       - key: EVALUATION_SERVICE_URL
@@ -193,12 +165,3 @@ services:
       - key: MOCKMATE_VLM_API_KEY
         sync: false
 
-# ── Managed PostgreSQL ─────────────────────────────────────────────────────────
-# Render-managed Postgres — use Supabase free tier instead to save $7/mo
-# Comment this out and set POSTGRES_* env vars manually if using Supabase.
-databases:
-  - name: mockmate-postgres
-    databaseName: mockmate_db
-    user: mockmate
-    plan: starter                               # $7/mo — or delete & use Supabase free
-    region: oregon
