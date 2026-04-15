@@ -19,8 +19,9 @@ class QuestionRequest(BaseModel):
     skills: str
     job_description: str
     count: int = 5
-    persona: str = "neutral"     # friendly | neutral | tough
-    strictness: str = "standard" # easy | standard | strict
+    persona: str = "neutral"      # friendly | neutral | tough
+    strictness: str = "standard"  # easy | standard | strict
+    resume_text: str = ""         # extracted text from uploaded resume
 
 
 @app.get("/health")
@@ -46,5 +47,6 @@ async def generate(request: Request, req: QuestionRequest):
         req.count,
         req.persona,
         req.strictness,
+        req.resume_text,
     )
     return {"questions": questions, "count": len(questions)}

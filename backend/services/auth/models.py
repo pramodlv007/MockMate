@@ -19,6 +19,7 @@ class User(Base):
     experience_years  = Column(Integer, nullable=True)
     education         = Column(String, nullable=True)
     skills            = Column(Text, nullable=True)      # JSON or CSV
+    resume_text       = Column(Text, nullable=True)      # extracted text from uploaded resume
 
     # Social links
     github_url        = Column(String, nullable=True)

@@ -1,6 +1,6 @@
-﻿"""
-MockMate Question Engine â€” Gemini-First with OpenAI Fallback
-Generates deeply technical interview questions tailored to JD, role, and tech stack.
+"""
+MockMate Question Engine - Gemini-First with OpenAI Fallback
+Generates deeply technical, resume-driven, skill-domain-aware interview questions.
 """
 import os
 import json
@@ -19,32 +19,32 @@ OPENAI_API_KEY = config.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
 print(f"[QuestionEngine] Gemini Key Present: {bool(GOOGLE_API_KEY)}")
 print(f"[QuestionEngine] OpenAI Key Present: {bool(OPENAI_API_KEY)}")
 
-# â”€â”€ Initialize Gemini â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# -- Initialize Gemini --------------------------------------------------------
 gemini_model = None
 if GOOGLE_API_KEY:
     try:
         import google.generativeai as genai
         genai.configure(api_key=GOOGLE_API_KEY)
         gemini_model = genai.GenerativeModel("gemini-1.5-flash")
-        print("[QuestionEngine] âœ“ Gemini model initialized")
+        print("[QuestionEngine] Gemini model initialized")
     except Exception as e:
         print(f"[QuestionEngine] Gemini init error: {e}")
 
-# â”€â”€ Initialize OpenAI (fallback) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# -- Initialize OpenAI (fallback) ---------------------------------------------
 openai_client = None
 if OPENAI_API_KEY:
     try:
         from openai import OpenAI
         openai_client = OpenAI(api_key=OPENAI_API_KEY)
-        print("[QuestionEngine] âœ“ OpenAI client initialized (fallback)")
+        print("[QuestionEngine] OpenAI client initialized (fallback)")
     except Exception as e:
         print(f"[QuestionEngine] OpenAI init error: {e}")
 
 
-# â”€â”€ Technology Extraction â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# -- Technology Extraction ----------------------------------------------------
 TECH_PATTERNS = [
     # Languages
-    ("python", r"\bpython\b"),
+    ("Python", r"\bpython\b"),
     ("Java", r"\bjava\b(?!script)"),
     ("JavaScript", r"\bjavascript\b"),
     ("TypeScript", r"\btypescript\b"),
@@ -55,7 +55,6 @@ TECH_PATTERNS = [
     ("Swift", r"\bswift\b"),
     ("Kotlin", r"\bkotlin\b"),
     ("Ruby", r"\bruby\b"),
-    ("PHP", r"\bphp\b"),
     ("Scala", r"\bscala\b"),
     # Frontend
     ("React", r"\breact\b"),
@@ -64,7 +63,7 @@ TECH_PATTERNS = [
     ("Angular", r"\bangular\b"),
     ("Svelte", r"\bsvelte\b"),
     ("Redux", r"\bredux\b"),
-    ("Tailwind CSS", r"\btailwind\b"),
+    ("Tailwind", r"\btailwind\b"),
     # Backend
     ("Node.js", r"\bnode\.?js\b"),
     ("Django", r"\bdjango\b"),
@@ -73,8 +72,6 @@ TECH_PATTERNS = [
     ("Spring Boot", r"\bspring\s*boot\b"),
     ("Express", r"\bexpress\b"),
     ("NestJS", r"\bnestjs\b"),
-    ("Rails", r"\brails\b"),
-    ("Laravel", r"\blaravel\b"),
     # Cloud & Infra
     ("AWS", r"\baws\b"),
     ("GCP", r"\bgcp\b"),
@@ -98,20 +95,23 @@ TECH_PATTERNS = [
     ("GraphQL", r"\bgraphql\b"),
     ("REST", r"\brest(?:ful)?\b"),
     ("gRPC", r"\bgrpc\b"),
-    ("WebSocket", r"\bwebsocket\b"),
-    # ML/Data
-    ("Machine Learning", r"\bmachine\s*learning\b|\bml\b"),
-    ("Deep Learning", r"\bdeep\s*learning\b"),
-    ("TensorFlow", r"\btensorflow\b"),
+    # ML/AI
     ("PyTorch", r"\bpytorch\b"),
+    ("TensorFlow", r"\btensorflow\b"),
+    ("scikit-learn", r"\bscikit[-\s]?learn\b|\bsklearn\b"),
+    ("Hugging Face", r"\bhugging\s*face\b|\btransformers\b"),
+    ("LLM", r"\bllm\b|\blarge\s+language\s+model\b"),
+    ("Machine Learning", r"\bmachine\s*learning\b"),
+    ("Deep Learning", r"\bdeep\s*learning\b"),
+    ("NLP", r"\bnlp\b|\bnatural\s+language\b"),
+    ("Computer Vision", r"\bcomputer\s+vision\b|\bcv\b"),
+    ("MLOps", r"\bmlops\b"),
     ("Pandas", r"\bpandas\b"),
+    ("NumPy", r"\bnumpy\b"),
     ("Spark", r"\bspark\b"),
-    # Devops / Monitoring
+    # Monitoring
     ("Prometheus", r"\bprometheus\b"),
     ("Grafana", r"\bgrafana\b"),
-    ("Jenkins", r"\bjenkins\b"),
-    ("GitHub Actions", r"\bgithub\s*actions\b"),
-    ("Nginx", r"\bnginx\b"),
     ("Microservices", r"\bmicroservices?\b"),
 ]
 
@@ -124,71 +124,169 @@ def extract_technologies(jd: str, skills: str) -> list:
         if re.search(pattern, text, re.IGNORECASE):
             if name not in found:
                 found.append(name)
-    print(f"[QuestionEngine] Extracted tech: {found[:10]}")
-    return found[:10]
+    print(f"[QuestionEngine] Extracted tech: {found[:12]}")
+    return found[:12]
 
 
-# â”€â”€ Core Prompt Builder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# -- Skill Domain Classifier --------------------------------------------------
+def _classify_domain(skills: str, jd: str, role: str) -> str:
+    """Detect primary skill domain to drive question category distribution."""
+    text = f"{skills} {jd} {role}".lower()
+
+    ml_signals    = ["machine learning", "deep learning", "pytorch", "tensorflow", "scikit",
+                     "nlp", "llm", "transformer", "neural", "mlops", "computer vision",
+                     "reinforcement", "hugging", "bert", "gpt", "diffusion", "embedding",
+                     "feature engineering", "data science", "xgboost", "model training",
+                     "pandas", "numpy", "regression", "classification"]
+    fe_signals    = ["react", "vue", "angular", "next.js", "frontend", "css", "html",
+                     "typescript", "webpack", "tailwind", "svelte", "redux", "ui", "ux"]
+    be_signals    = ["fastapi", "django", "flask", "spring", "node", "express", "rails",
+                     "backend", "api", "microservices", "rest", "grpc", "kafka", "rabbitmq"]
+    devops_signals = ["kubernetes", "docker", "terraform", "ci/cd", "aws", "gcp", "azure",
+                      "devops", "sre", "infrastructure", "helm", "ansible", "prometheus"]
+
+    scores = {
+        "ML/AI":    sum(s in text for s in ml_signals),
+        "Frontend": sum(s in text for s in fe_signals),
+        "Backend":  sum(s in text for s in be_signals),
+        "DevOps":   sum(s in text for s in devops_signals),
+    }
+    primary = max(scores, key=scores.get)
+    return primary if scores[primary] >= 2 else "General SWE"
+
+
+def _domain_question_guide(domain: str, role: str, company: str, tech: list) -> str:
+    """Return domain-specific question type instructions for the LLM."""
+    t  = tech[0] if tech else "Python"
+    t2 = tech[1] if len(tech) > 1 else t
+
+    guides = {
+        "ML/AI": f"""
+QUESTION CATEGORY DISTRIBUTION (strictly follow):
+  40% — Model internals & theory (e.g. transformer attention complexity, vanishing gradients, regularisation strategies, loss function trade-offs)
+  25% — Practical ML implementation (e.g. debugging a training loop, handling class imbalance, hyperparameter tuning in {t})
+  20% — MLOps & production deployment (e.g. model serving, A/B testing, monitoring data/concept drift at {company}'s scale)
+  15% — ML system design (e.g. design a ranking model or recommendation engine for {company})
+
+STRICTLY BANNED question types:
+  - Generic LeetCode DSA (sorting, trees, linked lists) unless directly related to an ML algorithm
+  - Standard web system design (URL shortener, ride-sharing, etc.)
+  - Culture-fit or vague behavioural questions
+""",
+        "Backend": f"""
+QUESTION CATEGORY DISTRIBUTION:
+  30% — API design & performance optimisation using {t}/{t2} at scale
+  25% — Database design, query optimisation, indexing strategies, transactions
+  20% — Concurrency, async patterns, distributed systems challenges
+  15% — System design (specific {company} backend feature at production scale)
+  10% — Targeted algorithmic problems relevant to backend (rate-limiting, caching, consistent hashing)
+
+BANNED: Generic culture-fit, unrelated frontend questions, vague "describe a time..." questions.
+""",
+        "Frontend": f"""
+QUESTION CATEGORY DISTRIBUTION:
+  35% — Deep framework internals (React reconciler, hooks, Virtual DOM, state management with {t})
+  25% — Performance optimisation (bundle splitting, lazy loading, rendering strategies, Core Web Vitals)
+  20% — Complex UI implementation scenario (e.g. build a real-time collaborative editor)
+  20% — Frontend system design (e.g. design {company}'s component library or micro-frontend architecture)
+
+BANNED: Backend infrastructure design, database internals, generic DSA unrelated to UI algorithms.
+""",
+        "DevOps": f"""
+QUESTION CATEGORY DISTRIBUTION:
+  35% — Infrastructure design & failure scenarios using {t}/{t2}
+  25% — CI/CD pipeline design, deployment strategies (blue-green, canary, rollback)
+  20% — Observability (SLI/SLO/SLA, distributed tracing, alerting, incident response)
+  20% — Reliability engineering & cost optimisation at {company}'s scale
+
+BANNED: Generic web development questions, standard LeetCode DSA.
+""",
+        "General SWE": f"""
+QUESTION CATEGORY DISTRIBUTION:
+  30% — System design using the candidate's specific tech stack
+  30% — Algorithmic problems at the appropriate seniority level
+  25% — Deep technical knowledge of technologies listed in the JD
+  15% — Project deep-dives (probe the candidate's specific past experiences)
+""",
+    }
+    return guides.get(domain, guides["General SWE"])
+
+
+# -- Core Prompt Builder ------------------------------------------------------
 def _build_prompt(company: str, role: str, skills: str, jd: str,
-                  technologies: list, count: int, persona: str, strictness: str) -> str:
-    """Build the prompt that works with both Gemini and OpenAI."""
+                  technologies: list, count: int, persona: str, strictness: str,
+                  resume_text: str = "") -> str:
+    """Build a resume-driven, skill-category-aware interview question prompt."""
+    domain       = _classify_domain(skills, jd, role)
     tech_display = ", ".join(technologies) if technologies else (skills or role)
+    print(f"[QuestionEngine] Domain detected: {domain}")
 
     persona_desc = {
-        "friendly": "warm and growth-focused but still deeply technical",
-        "neutral": "professional, balanced, industry-standard depth",
-        "tough": "demanding, no hand-holding, FAANG-level rigour",
-    }.get(persona, "balanced")
+        "friendly": "warm and encouraging but deeply technical — push the candidate to think deeper",
+        "neutral":  "professional, balanced — FAANG mid-level bar",
+        "tough":    "demanding, no hand-holding — L5/L6 FAANG bar, expects precision and depth",
+    }.get(persona, "professional, balanced")
 
     strictness_desc = {
-        "easy": "conceptual understanding focus, encourage effort",
-        "standard": "solid engineering fundamentals required",
-        "strict": "top 1% bar â€” only extreme depth and precision accepted",
-    }.get(strictness, "standard")
+        "easy":     "focus on conceptual understanding, encourage thinking aloud",
+        "standard": "solid engineering fundamentals required, expect working solutions",
+        "strict":   "top 1% bar — only extreme depth, precision, and optimal solutions accepted",
+    }.get(strictness, "solid engineering fundamentals required")
 
-    # Detect seniority
-    is_senior = any(w in role.lower() for w in ["senior", "lead", "staff", "principal", "architect", "manager"])
+    is_senior = any(w in role.lower() for w in
+                    ["senior", "lead", "staff", "principal", "architect", "manager", "vp", "director"])
 
-    system_design_instruction = ""
-    if is_senior:
-        system_design_instruction = (
-            "- At least 2 questions MUST be system design / architecture questions "
-            f"(e.g. 'Design a real-time notification system for {company}').\n"
-        )
+    # Resume context block
+    if resume_text and len(resume_text.strip()) > 100:
+        resume_block = f"""
+=== CANDIDATE RESUME (read carefully and use this to personalise questions) ===
+{resume_text[:3500]}
+=== END OF RESUME ===
 
-    return f"""You are an elite senior technical interviewer at {company} conducting a rigorous interview for a **{role}** position.
+RESUME-DRIVEN INSTRUCTIONS:
+- Identify 2-3 specific PROJECTS or EXPERIENCES from the resume above
+- Generate at least {max(1, count // 3)} questions that reference a specific project, technology, or achievement from the resume
+- Format: "In your [Project Name] project you used [Technology] — explain how you handled [specific challenge]"
+- This grounds questions in the candidate's real work, making them maximally relevant
+"""
+    else:
+        resume_block = "\n[No resume uploaded — generate questions based on JD and declared skills only]\n"
 
-INTERVIEWER PERSONA: {persona_desc}
-EVALUATION STRICTNESS: {strictness_desc}
+    domain_guide = _domain_question_guide(domain, role, company, technologies)
+    senior_note = (
+        f"- At least 1 question MUST be a {domain}-specific system design question at {company}'s scale.\n"
+        if is_senior else ""
+    )
 
-â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-JOB DESCRIPTION (analyze this deeply):
+    return f"""You are a principal-level technical interviewer at {company} evaluating a {role} candidate.
+
+STYLE: {persona_desc}
+BAR: {strictness_desc}
+PRIMARY SKILL DOMAIN DETECTED: {domain} — questions MUST reflect this domain
+
+{resume_block}
+=== JOB DESCRIPTION ===
 {jd[:2000]}
-â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+=== END JD ===
+
 CANDIDATE'S DECLARED SKILLS: {skills or "Not specified"}
-CORE TECHNOLOGIES DETECTED FROM JD: {tech_display}
-â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+DETECTED TECHNOLOGIES: {tech_display}
 
-YOUR TASK: Generate exactly {count} interview questions.
+{domain_guide}
 
-ABSOLUTE RULES:
-1. NEVER generate generic questions like "Tell me about yourself", "Why this company?", "Describe a challenge", "What are your strengths?"
-2. EVERY question MUST directly reference at least one specific technology from this list: {tech_display}
-3. Questions must be scenario-based â€” give the candidate a realistic problem to solve
-4. Include a healthy mix:
-   - Live coding / algorithm questions with specific constraints
-   - Deep-dive technical concept questions (internals, edge cases, trade-offs)
-{system_design_instruction}5. Frame each question exactly as a real interviewer would ask it face-to-face
-6. Questions should be specific to {company}'s domain and scale where possible
-7. A strong {role} should be able to answer well; a junior engineer should struggle
+UNIVERSAL RULES:
+{senior_note}- EVERY question must reference at least one technology from: {tech_display}
+- Questions must be concrete, scenario-based — give a realistic problem to solve
+- Frame each exactly as you would ask face-to-face: no meta-commentary, just the question
+- NEVER generate: "Tell me about yourself", "Why this company?", "Describe a challenge", "What are your strengths?"
 
-Return ONLY a valid JSON object:
-{{"questions": ["Question 1", "Question 2", ...]}}
+Return ONLY valid JSON (no markdown, no extra text):
+{{"questions": ["Question 1 text", "Question 2 text", ...]}}
 
-Generate exactly {count} questions. No explanations, no markdown, just the JSON."""
+Generate exactly {count} questions."""
 
 
-# â”€â”€ LLM Callers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# -- LLM Callers --------------------------------------------------------------
 def _call_gemini(prompt: str, count: int) -> list:
     """Generate questions using Gemini 1.5 Flash."""
     if not gemini_model:
@@ -199,21 +297,20 @@ def _call_gemini(prompt: str, count: int) -> list:
             prompt,
             generation_config={
                 "temperature": 0.75,
-                "max_output_tokens": 2000,
+                "max_output_tokens": 2500,
                 "response_mime_type": "application/json",
             }
         )
         text = response.text.strip()
-        # Parse JSON
         data = json.loads(text)
         questions = data.get("questions", [])
         if questions and len(questions) >= count:
-            print(f"[QuestionEngine] âœ“ Gemini returned {len(questions)} questions")
+            print(f"[QuestionEngine] Gemini returned {len(questions)} questions")
             return questions[:count]
         print(f"[QuestionEngine] Gemini returned only {len(questions)} questions, need {count}")
         return questions
     except Exception as e:
-        print(f"[QuestionEngine] âœ— Gemini error: {e}")
+        print(f"[QuestionEngine] Gemini error: {e}")
         return []
 
 
@@ -228,58 +325,66 @@ def _call_openai(prompt: str, count: int) -> list:
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
             temperature=0.75,
-            max_tokens=2000,
+            max_tokens=2500,
         )
         data = json.loads(resp.choices[0].message.content)
         questions = data.get("questions", [])
         if questions and len(questions) >= count:
-            print(f"[QuestionEngine] âœ“ OpenAI returned {len(questions)} questions")
+            print(f"[QuestionEngine] OpenAI returned {len(questions)} questions")
             return questions[:count]
         return questions
     except Exception as e:
-        print(f"[QuestionEngine] âœ— OpenAI error: {e}")
+        print(f"[QuestionEngine] OpenAI error: {e}")
         return []
 
 
-# â”€â”€ Smart Fallback (no API needed) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-def _smart_fallback(company: str, role: str, technologies: list, count: int, strictness: str) -> list:
-    """Last resort: generate JD-aware questions from templates."""
-    print("[QuestionEngine] Using smart template fallback (no API)")
+# -- Smart Template Fallback --------------------------------------------------
+def _smart_fallback(company: str, role: str, technologies: list, count: int,
+                    strictness: str, domain: str = "General SWE") -> list:
+    """Last resort: JD-aware, domain-specific template questions."""
+    print(f"[QuestionEngine] Using smart template fallback (domain={domain})")
     tech = technologies if technologies else [role]
     t1 = tech[0]
     t2 = tech[1] if len(tech) > 1 else t1
 
-    pool = [
-        f"You're building a high-traffic API endpoint using {t1} at {company}. A performance profiler shows the P99 latency spiked from 50ms to 2 seconds after a recent deploy. Walk me through exactly how you'd diagnose and fix this.",
-        f"Implement an LRU cache in {t1} from scratch. What's the time complexity of get and put? How would you make it thread-safe?",
-        f"Design the database schema and API contracts for {company}'s core product feature. How would you handle data migrations at scale?",
-        f"You discover a memory leak in a {t1} microservice that only manifests under sustained load. Describe your debugging strategy step by step.",
-        f"Compare {t1} and {t2} for building a real-time data pipeline. What are the trade-offs in terms of concurrency, memory management, and ecosystem?",
-        f"A critical {t1} service at {company} is experiencing cascading failures. Walk me through your incident response â€” from detection to post-mortem.",
-        f"Design a distributed rate limiter for {company}'s public API using {t2}. It must handle 100K RPM across multiple regions. What data structures and algorithms would you use?",
-        f"Write a function in {t1} that finds the k most frequent elements in a data stream of 10 million items. Optimize for both time and space.",
-        f"You need to migrate {company}'s monolithic {t1} application to microservices. Describe your decomposition strategy, communication patterns, and how you'd handle data consistency.",
-        f"Explain the internal workings of {t1}'s garbage collector (or memory model). How does this knowledge influence the way you write production code?",
-        f"Design a search system for {company} that handles 50M documents. Describe your indexing strategy, ranking algorithm, and how you'd ensure sub-100ms query latency.",
-        f"A junior developer pushes code using {t1} that passes all unit tests but causes a subtle data corruption bug in production. How would you find it, fix it, and prevent it from happening again?",
-        f"Architect a real-time notification system for {company} that supports email, push, and in-app channels with user preference management. Use {t2} where appropriate.",
-        f"Explain the CAP theorem and how it concretely applies to a system you've built with {t2}. Which trade-off did you choose and why?",
-        f"You're given a {t1} codebase with zero test coverage. You have 2 sprints to bring it to production readiness. What's your testing strategy?",
+    ml_pool = [
+        f"Explain the mathematical intuition behind backpropagation and how it applies to training your {t1} model. What happens when gradients vanish?",
+        f"You're training a {t1} classifier at {company} and it achieves 95% accuracy but performs poorly in production. Walk me through how you'd diagnose this.",
+        f"Design a real-time recommendation system for {company} using {t1}. How do you handle the cold-start problem at scale?",
+        f"Compare {t1} and {t2} for building a large-scale NLP pipeline. What are the trade-offs in training speed, memory, and deployment?",
+        f"How would you detect and handle data drift in a {t1} model deployed at {company}? Describe your monitoring strategy.",
+        f"Walk me through how you'd fine-tune a pre-trained {t1} transformer model for a domain-specific classification task with limited labelled data.",
+        f"Design an MLOps pipeline for {company} that handles model versioning, A/B testing, and automated rollback using {t2}.",
+        f"Explain the bias-variance trade-off and give a concrete example from a project where you managed it in a {t1} model.",
+    ]
+    swe_pool = [
+        f"You're building a high-traffic API at {company} using {t1}. The P99 latency spiked from 50ms to 2s. Walk me through exactly how you'd diagnose and fix it.",
+        f"Implement an LRU cache in {t1}. What's the time complexity of get/put? How do you make it thread-safe?",
+        f"Design the data model and API contracts for {company}'s core product. How do you handle schema migrations at scale?",
+        f"You discover a memory leak in a {t1} microservice that only appears under sustained load. Describe your debugging strategy.",
+        f"Design a distributed rate limiter for {company}'s public API using {t2}. It must handle 100K RPM across multiple regions.",
+        f"Compare {t1} and {t2} for a real-time data pipeline. What are the trade-offs in concurrency and memory management?",
+        f"A {t1} service at {company} is experiencing cascading failures. Walk me through incident response from detection to post-mortem.",
+        f"Design a search system for {company} handling 50M documents with sub-100ms P99 query latency.",
     ]
 
+    pool = ml_pool if domain == "ML/AI" else swe_pool
     if strictness == "strict":
-        pool.append(f"Design {company}'s entire backend infrastructure from scratch using {t1} and {t2}. Cover scalability, fault tolerance, observability, and disaster recovery.")
+        pool.append(f"Design {company}'s entire {domain} infrastructure from scratch using {t1} and {t2}. Cover scalability, fault tolerance, observability, and disaster recovery.")
 
     random.shuffle(pool)
     return pool[:count]
 
 
-# â”€â”€ Main Engine Class â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# -- Main Engine Class --------------------------------------------------------
 class QuestionEngine:
     def generate(self, company: str, role: str, skills: str, jd: str,
-                 count: int, persona: str, strictness: str) -> list:
+                 count: int, persona: str, strictness: str,
+                 resume_text: str = "") -> list:
         technologies = extract_technologies(jd, skills)
-        prompt = _build_prompt(company, role, skills, jd, technologies, count, persona, strictness)
+        domain = _classify_domain(skills, jd, role)
+        prompt = _build_prompt(company, role, skills, jd, technologies,
+                               count, persona, strictness, resume_text)
 
         # Tier 1: Gemini (free, fast)
         questions = _call_gemini(prompt, count)
@@ -287,12 +392,13 @@ class QuestionEngine:
             return questions[:count]
 
         # Tier 2: OpenAI (paid fallback)
-        questions = _call_openai(prompt, count)
-        if len(questions) >= count:
-            return questions[:count]
+        if openai_client:
+            questions = _call_openai(prompt, count)
+            if len(questions) >= count:
+                return questions[:count]
 
-        # Tier 3: Smart templates (always works)
-        return _smart_fallback(company, role, technologies, count, strictness)
+        # Tier 3: Domain-aware smart templates
+        return _smart_fallback(company, role, technologies, count, strictness, domain)
 
 
 engine = QuestionEngine()

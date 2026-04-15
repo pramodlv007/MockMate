@@ -36,3 +36,7 @@ requests
 tenacity
 slowapi
 
+# Resume parsing
+pdfplumber
+python-docx
+
