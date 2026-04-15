@@ -3,7 +3,8 @@ import { useState, useEffect, useRef } from 'react';
 import {
   ArrowRight, Brain, LineChart, Zap, Target, Globe, Shield,
   ChevronRight, Play, CheckCircle, Star, Users, Award, TrendingUp,
-  Code2, Database, Cpu, GitBranch, Sparkles, Clock
+  Code2, Database, Cpu, GitBranch, Sparkles, Clock,
+  type LucideIcon
 } from 'lucide-react';
 
 /* ── Animated counter hook ───── */
@@ -108,7 +109,7 @@ const BrainIllustration = () => (
 
 /* ── Interview process SVG ─── */
 const ProcessStep = ({ number, icon: Icon, title, desc, color }: {
-  number: string; icon: React.ComponentType<{ size: number; className?: string }>;
+  number: string; icon: LucideIcon;
   title: string; desc: string; color: string;
 }) => (
   <div className="flex gap-5 group">
