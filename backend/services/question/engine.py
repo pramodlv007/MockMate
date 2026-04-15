@@ -15,9 +15,11 @@ config = dotenv_values(backend_dir / ".env")
 
 GOOGLE_API_KEY = config.get("GOOGLE_API_KEY") or os.getenv("GOOGLE_API_KEY")
 OPENAI_API_KEY = config.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
+TAVILY_API_KEY = config.get("TAVILY_API_KEY") or os.getenv("TAVILY_API_KEY")
 
 print(f"[QuestionEngine] Gemini Key Present: {bool(GOOGLE_API_KEY)}")
 print(f"[QuestionEngine] OpenAI Key Present: {bool(OPENAI_API_KEY)}")
+print(f"[QuestionEngine] Tavily Key Present: {bool(TAVILY_API_KEY)}")
 
 # -- Initialize Gemini --------------------------------------------------------
 gemini_model = None
@@ -215,8 +217,8 @@ QUESTION CATEGORY DISTRIBUTION:
 # -- Core Prompt Builder ------------------------------------------------------
 def _build_prompt(company: str, role: str, skills: str, jd: str,
                   technologies: list, count: int, persona: str, strictness: str,
-                  resume_text: str = "") -> str:
-    """Build a resume-driven, skill-category-aware interview question prompt."""
+                  resume_text: str = "", web_context: str = "") -> str:
+    """Build a resume-driven, web-search-enriched, skill-category-aware interview question prompt."""
     domain       = _classify_domain(skills, jd, role)
     tech_display = ", ".join(technologies) if technologies else (skills or role)
     print(f"[QuestionEngine] Domain detected: {domain}")
@@ -239,18 +241,33 @@ def _build_prompt(company: str, role: str, skills: str, jd: str,
     # Resume context block
     if resume_text and len(resume_text.strip()) > 100:
         resume_block = f"""
-=== CANDIDATE RESUME (read carefully and use this to personalise questions) ===
-{resume_text[:3500]}
+=== CANDIDATE RESUME (personalise questions using this) ===
+{resume_text[:3000]}
 === END OF RESUME ===
 
-RESUME-DRIVEN INSTRUCTIONS:
-- Identify 2-3 specific PROJECTS or EXPERIENCES from the resume above
-- Generate at least {max(1, count // 3)} questions that reference a specific project, technology, or achievement from the resume
-- Format: "In your [Project Name] project you used [Technology] — explain how you handled [specific challenge]"
-- This grounds questions in the candidate's real work, making them maximally relevant
+RESUME INSTRUCTIONS:
+- Identify 2-3 specific projects or experiences from the resume
+- At least {max(1, count // 3)} questions must directly reference a specific project/technology/achievement from the resume
+- Frame as: "In your [Project Name] you used [Tech] — explain how you handled [specific challenge]"
 """
     else:
-        resume_block = "\n[No resume uploaded — generate questions based on JD and declared skills only]\n"
+        resume_block = "\n[No resume — generate questions from JD and skills only]\n"
+
+    # Web search context block
+    if web_context and len(web_context.strip()) > 100:
+        web_block = f"""
+=== REAL INTERVIEW QUESTIONS FOUND ON THE WEB (use as inspiration, do not copy verbatim) ===
+{web_context[:3000]}
+=== END WEB CONTEXT ===
+
+WEB SEARCH INSTRUCTIONS:
+- Study the real questions above to understand what {company} / {role} interviews actually test
+- Use these as INSPIRATION to create similar but uniquely personalised questions
+- Adapt the difficulty and focus areas based on what real interviewers ask for this role
+- Do NOT copy any question verbatim — generate original questions informed by the research
+"""
+    else:
+        web_block = ""
 
     domain_guide = _domain_question_guide(domain, role, company, technologies)
     senior_note = (
@@ -262,9 +279,10 @@ RESUME-DRIVEN INSTRUCTIONS:
 
 STYLE: {persona_desc}
 BAR: {strictness_desc}
-PRIMARY SKILL DOMAIN DETECTED: {domain} — questions MUST reflect this domain
+PRIMARY SKILL DOMAIN: {domain} — questions MUST reflect this domain
 
 {resume_block}
+{web_block}
 === JOB DESCRIPTION ===
 {jd[:2000]}
 === END JD ===
@@ -276,9 +294,9 @@ DETECTED TECHNOLOGIES: {tech_display}
 
 UNIVERSAL RULES:
 {senior_note}- EVERY question must reference at least one technology from: {tech_display}
-- Questions must be concrete, scenario-based — give a realistic problem to solve
-- Frame each exactly as you would ask face-to-face: no meta-commentary, just the question
-- NEVER generate: "Tell me about yourself", "Why this company?", "Describe a challenge", "What are your strengths?"
+- Questions must be concrete and scenario-based — give a realistic problem to solve
+- Frame each exactly as a face-to-face interviewer would ask it
+- NEVER generate: "Tell me about yourself", "Why this company?", "What are your strengths?", "Describe a challenge"
 
 Return ONLY valid JSON (no markdown, no extra text):
 {{"questions": ["Question 1 text", "Question 2 text", ...]}}
@@ -376,6 +394,51 @@ def _smart_fallback(company: str, role: str, technologies: list, count: int,
     return pool[:count]
 
 
+# -- Tavily Web Search --------------------------------------------------------
+def _search_interview_questions(company: str, role: str, technologies: list) -> str:
+    """Search the web for current, real interview questions for this role/company."""
+    if not TAVILY_API_KEY:
+        print("[QuestionEngine] No Tavily key — skipping web search")
+        return ""
+
+    try:
+        from tavily import TavilyClient
+        client = TavilyClient(api_key=TAVILY_API_KEY)
+
+        tech_str = ", ".join(technologies[:4]) if technologies else role
+        queries = [
+            f"{company} {role} interview questions 2024 2025",
+            f"{tech_str} technical interview questions experienced",
+        ]
+
+        all_results = []
+        for query in queries:
+            try:
+                result = client.search(
+                    query=query,
+                    search_depth="basic",
+                    max_results=3,
+                    include_answer=True,
+                )
+                # Extract relevant content from search results
+                for r in result.get("results", []):
+                    content = r.get("content", "").strip()
+                    if content and len(content) > 100:
+                        all_results.append(f"[From: {r.get('url', 'web')}]\n{content[:800]}")
+                print(f"[QuestionEngine] Tavily search '{query}': {len(result.get('results', []))} results")
+            except Exception as e:
+                print(f"[QuestionEngine] Tavily query failed: {e}")
+
+        if all_results:
+            combined = "\n\n---\n\n".join(all_results[:5])
+            print(f"[QuestionEngine] Web search context: {len(combined)} chars")
+            return combined
+    except Exception as e:
+        print(f"[QuestionEngine] Tavily init error: {e}")
+
+    return ""
+
+
 # -- Main Engine Class --------------------------------------------------------
 class QuestionEngine:
     def generate(self, company: str, role: str, skills: str, jd: str,
@@ -383,21 +446,26 @@ class QuestionEngine:
                  resume_text: str = "") -> list:
         technologies = extract_technologies(jd, skills)
         domain = _classify_domain(skills, jd, role)
-        prompt = _build_prompt(company, role, skills, jd, technologies,
-                               count, persona, strictness, resume_text)
 
-        # Tier 1: Gemini (free, fast)
+        # Step 1: Web search for current real interview questions
+        web_context = _search_interview_questions(company, role, technologies)
+
+        # Step 2: Build prompt with all context (profile + resume + JD + web search)
+        prompt = _build_prompt(company, role, skills, jd, technologies,
+                               count, persona, strictness, resume_text, web_context)
+
+        # Step 3: Tier 1 — Gemini
         questions = _call_gemini(prompt, count)
         if len(questions) >= count:
             return questions[:count]
 
-        # Tier 2: OpenAI (paid fallback)
+        # Step 4: Tier 2 — OpenAI fallback
         if openai_client:
             questions = _call_openai(prompt, count)
             if len(questions) >= count:
                 return questions[:count]
 
-        # Tier 3: Domain-aware smart templates
+        # Step 5: Tier 3 — Domain-aware smart templates
         return _smart_fallback(company, role, technologies, count, strictness, domain)
 
 
