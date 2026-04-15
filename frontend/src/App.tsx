@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Header } from './components/Header';
 import { Home } from './pages/Home';
 import { Profile } from './pages/Profile';
@@ -31,11 +31,13 @@ const ProtectedRoute = ({ children }: { children: ReactNode }) => {
 function AppRoutes() {
   useWarmup();
   const { isAuthenticated } = useAuth();
+  const location = useLocation();
+  const isHome = location.pathname === '/';
 
   return (
     <div className="min-h-screen text-slate-50" style={{ background: '#060611', fontFamily: "'Inter', system-ui, sans-serif" }}>
       {isAuthenticated && <Header />}
-      <main className={isAuthenticated ? "container mx-auto px-4 py-8" : ""}>
+      <main className={isAuthenticated && !isHome ? "container mx-auto px-4 py-8" : ""}>
         <Routes>
           <Route path="/login" element={isAuthenticated ? <Navigate to="/" /> : <Login />} />
           <Route path="/signup" element={isAuthenticated ? <Navigate to="/" /> : <Signup />} />
