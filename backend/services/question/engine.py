@@ -110,8 +110,9 @@ def _extract_technologies(jd: str, skills: str, resume: str = "") -> list[str]:
 # 2. DOMAIN CLASSIFICATION
 # ═════════════════════════════════════════════════════════════════════════════════
 def _classify_domain(skills: str, jd: str, role: str) -> str:
-    """Detect the candidate's primary skill domain."""
+    """Detect the candidate's primary skill domain. Role name is weighted heavily."""
     text = f"{skills} {jd} {role}".lower()
+    role_lower = role.lower()
     signals = {
         "ML/AI": ["machine learning", "deep learning", "pytorch", "tensorflow", "scikit",
                    "nlp", "llm", "transformer", "neural", "mlops", "computer vision",
@@ -125,6 +126,18 @@ def _classify_domain(skills: str, jd: str, role: str) -> str:
                     "devops", "sre", "infrastructure", "helm", "ansible", "prometheus"],
     }
     scores = {domain: sum(s in text for s in kws) for domain, kws in signals.items()}
+
+    # Role name is a very strong signal — give +3 bonus if role explicitly names a domain
+    role_boost = {
+        "ML/AI": ["ml ", "machine learning", "data scien", "ai "],
+        "Frontend": ["frontend", "front-end", "ui ", "ux "],
+        "Backend": ["backend", "back-end", "server", "api "],
+        "DevOps": ["devops", "sre", "infrastructure", "platform"],
+    }
+    for domain, patterns in role_boost.items():
+        if any(p in role_lower for p in patterns):
+            scores[domain] += 3
+
     best = max(scores, key=scores.get)
     return best if scores[best] >= 2 else "General SWE"
 
