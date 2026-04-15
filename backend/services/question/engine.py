@@ -21,16 +21,27 @@ print(f"[QuestionEngine] Gemini Key Present: {bool(GOOGLE_API_KEY)}")
 print(f"[QuestionEngine] OpenAI Key Present: {bool(OPENAI_API_KEY)}")
 print(f"[QuestionEngine] Tavily Key Present: {bool(TAVILY_API_KEY)}")
 
-# -- Initialize Gemini --------------------------------------------------------
-gemini_model = None
+# -- Initialize Gemini -------------------------------------------------------
+gemini_client = None
+gemini_model_name = "models/gemini-2.0-flash-lite"  # Free tier friendly, correct models/ prefix
 if GOOGLE_API_KEY:
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=GOOGLE_API_KEY)
-        gemini_model = genai.GenerativeModel("gemini-1.5-flash")
-        print("[QuestionEngine] Gemini model initialized")
+        from google import genai as google_genai
+        gemini_client = google_genai.Client(api_key=GOOGLE_API_KEY)
+        print("[QuestionEngine] google.genai Client initialized")
     except Exception as e:
-        print(f"[QuestionEngine] Gemini init error: {e}")
+        print(f"[QuestionEngine] google.genai init error: {e}")
+        # Fallback: try old SDK
+        try:
+            import google.generativeai as genai_old
+            genai_old.configure(api_key=GOOGLE_API_KEY)
+            gemini_client = genai_old.GenerativeModel(gemini_model_name)
+            print("[QuestionEngine] Fallback: google.generativeai initialized")
+        except Exception as e2:
+            print(f"[QuestionEngine] Both Gemini SDKs failed: {e2}")
+
+# Keep gemini_model as alias for health check compatibility
+gemini_model = gemini_client
 
 # -- Initialize OpenAI (fallback) ---------------------------------------------
 openai_client = None
@@ -306,29 +317,51 @@ Generate exactly {count} questions."""
 
 # -- LLM Callers --------------------------------------------------------------
 def _call_gemini(prompt: str, count: int) -> list:
-    """Generate questions using Gemini 1.5 Flash."""
-    if not gemini_model:
+    """Generate questions using the new google.genai SDK."""
+    if not gemini_client:
         return []
     try:
-        print("[QuestionEngine] Calling Gemini 1.5 Flash...")
-        response = gemini_model.generate_content(
-            prompt,
-            generation_config={
-                "temperature": 0.75,
-                "max_output_tokens": 2500,
-                "response_mime_type": "application/json",
-            }
+        print(f"[QuestionEngine] Calling Gemini ({gemini_model_name})...")
+        from google import genai as google_genai
+        response = gemini_client.models.generate_content(
+            model=gemini_model_name,
+            contents=prompt,
+            config=google_genai.types.GenerateContentConfig(
+                temperature=0.75,
+                max_output_tokens=2500,
+            )
         )
         text = response.text.strip()
+        # Strip markdown fences if present
+        if text.startswith("```"):
+            text = re.sub(r"^```[a-z]*\n?", "", text)
+            text = re.sub(r"\n?```$", "", text)
         data = json.loads(text)
         questions = data.get("questions", [])
         if questions and len(questions) >= count:
             print(f"[QuestionEngine] Gemini returned {len(questions)} questions")
             return questions[:count]
-        print(f"[QuestionEngine] Gemini returned only {len(questions)} questions, need {count}")
+        print(f"[QuestionEngine] Gemini returned only {len(questions)}, need {count}")
         return questions
     except Exception as e:
-        print(f"[QuestionEngine] Gemini error: {e}")
+        print(f"[QuestionEngine] google.genai error: {e}")
+        # Fallback: try old SDK if client is old-style model
+        try:
+            response = gemini_client.generate_content(
+                prompt,
+                generation_config={"temperature": 0.75, "max_output_tokens": 2500}
+            )
+            text = response.text.strip()
+            if text.startswith("```"):
+                text = re.sub(r"^```[a-z]*\n?", "", text)
+                text = re.sub(r"\n?```$", "", text)
+            data = json.loads(text)
+            questions = data.get("questions", [])
+            if questions:
+                print(f"[QuestionEngine] Old SDK returned {len(questions)} questions")
+                return questions[:count]
+        except Exception as e2:
+            print(f"[QuestionEngine] Both Gemini calls failed: {e2}")
         return []
 
 

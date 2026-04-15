@@ -23,7 +23,8 @@ minio
 
 # AI Integration
 openai
-google-generativeai
+google-genai>=1.0.0
+google-generativeai>=0.8.0
 tavily-python
 
 # Video Processing (Future)
