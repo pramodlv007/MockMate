@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Header } from './components/Header';
 import { Home } from './pages/Home';
@@ -11,6 +12,16 @@ import { Signup } from './pages/Signup';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import type { ReactNode } from 'react';
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
+// Fire-and-forget: wake all downstream services the moment the app loads
+// so they're ready before the user reaches any feature page.
+function useWarmup() {
+  useEffect(() => {
+    fetch(`${API_URL}/warmup`, { method: 'GET' }).catch(() => {/* silent */});
+  }, []);
+}
+
 const ProtectedRoute = ({ children }: { children: ReactNode }) => {
   const { isAuthenticated } = useAuth();
   if (!isAuthenticated) return <Navigate to="/login" replace />;
@@ -18,6 +29,7 @@ const ProtectedRoute = ({ children }: { children: ReactNode }) => {
 };
 
 function AppRoutes() {
+  useWarmup();
   const { isAuthenticated } = useAuth();
 
   return (

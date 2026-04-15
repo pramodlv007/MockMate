@@ -88,7 +88,7 @@ async def _proxy(request: Request, target_base: str, path_suffix: str) -> Respon
         forward_headers["x-forwarded-for"] = request.client.host
 
     MAX_RETRIES = 3
-    COLD_START_WAIT = 15  # seconds — Render free tier cold start ~15-30s
+    COLD_START_WAIT = 30  # seconds — Render free tier cold start ~30-45s
 
     last_resp = None
     for attempt in range(MAX_RETRIES):
@@ -152,6 +152,28 @@ async def _proxy(request: Request, target_base: str, path_suffix: str) -> Respon
 @app.get("/health", tags=["meta"])
 async def health():
     return {"status": "ok", "service": "gateway"}
+
+@app.get("/warmup", tags=["meta"])
+async def warmup():
+    """Proactively wake all downstream services in parallel (call on app load)."""
+    import asyncio
+    services = {
+        "auth":      f"{AUTH_SERVICE_URL}/health",
+        "interview": f"{INTERVIEW_SERVICE_URL}/health",
+        "question":  f"{QUESTION_SERVICE_URL}/health",
+        "profile":   f"{PROFILE_SERVICE_URL}/health",
+    }
+    results = {}
+    async def ping(name, url):
+        try:
+            async with httpx.AsyncClient(timeout=45.0) as c:
+                r = await c.get(url)
+                results[name] = r.status_code
+        except Exception as e:
+            results[name] = str(e)
+
+    await asyncio.gather(*[ping(n, u) for n, u in services.items()])
+    return {"warmed": results}
 
 @app.get("/", tags=["meta"])
 async def root():
