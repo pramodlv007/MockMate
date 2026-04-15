@@ -28,6 +28,7 @@ class ProfileUpdate(BaseModel):
     linkedin_url: Optional[str] = None
     portfolio_url: Optional[str] = None
     bio: Optional[str] = None
+    resume_text: Optional[str] = None
 
 
 # ─── Output Schemas ────────────────────────────────────────────────────────────
@@ -43,6 +44,7 @@ class UserOut(BaseModel):
     linkedin_url: Optional[str] = None
     portfolio_url: Optional[str] = None
     bio: Optional[str] = None
+    resume_text: Optional[str] = None
     is_verified: bool = False
     created_at: datetime
     last_login_at: Optional[datetime] = None

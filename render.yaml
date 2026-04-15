@@ -20,7 +20,7 @@ services:
       - key: AUTH_SERVICE_URL
         value: https://mockmate-auth.onrender.com
       - key: INTERVIEW_SERVICE_URL
-        value: https://mockmate-interview.onrender.com
+        value: https://mockmate-interview-s7nj.onrender.com
       - key: QUESTION_SERVICE_URL
         value: https://mockmate-question.onrender.com
       - key: EVALUATION_SERVICE_URL

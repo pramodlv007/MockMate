@@ -15,20 +15,12 @@ python-jose[cryptography]
 
 # Database Drivers
 psycopg2-binary
-motor # Async MongoDB
-redis
-
-# Storage
-minio
 
 # AI Integration
 openai
-google-generativeai
+google-genai>=1.0.0
+google-generativeai>=0.8.0
 tavily-python
-
-# Video Processing (Future)
-moviepy
-opencv-python-headless
 
 # Utilities
 email-validator
@@ -36,3 +28,6 @@ requests
 tenacity
 slowapi
 
+# Resume parsing
+pdfplumber
+python-docx

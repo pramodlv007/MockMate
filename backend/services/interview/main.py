@@ -3,14 +3,15 @@ MockMate Interview Service — Port 8004
 Manages interview sessions: create, fetch, upload video, patch evaluation results.
 Calls Question Service to generate questions on session creation.
 """
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Header
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from common.database import get_db, engine
 from . import models
 from .schemas import InterviewSessionOut, EvaluationPatch
 from pathlib import Path
-import httpx, uuid, os
+import httpx, uuid, os, traceback
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -19,8 +20,14 @@ load_dotenv(Path(__file__).parent.parent.parent / ".env")
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="MockMate Interview Service", version="2.0.0")
-# CORS — Handled centrally by Gateway.
 
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    tb = traceback.format_exc()
+    return JSONResponse(
+        status_code=500,
+        content={"error": str(exc), "type": type(exc).__name__, "traceback": tb}
+    )
 
 @app.get("/health")
 def health():
@@ -29,6 +36,7 @@ def health():
 
 QUESTION_SERVICE_URL   = os.getenv("QUESTION_SERVICE_URL",   "http://localhost:8003")
 EVALUATION_SERVICE_URL = os.getenv("EVALUATION_SERVICE_URL", "http://localhost:8005")
+AUTH_SERVICE_URL       = os.getenv("AUTH_SERVICE_URL",       "http://localhost:8001")
 UPLOAD_DIR = Path(__file__).parent.parent.parent / "uploads" / "videos"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -65,6 +73,25 @@ async def create_interview(
     db.add(session)
     db.commit()
 
+    # Fetch user profile (including resume) from auth service
+    resume_text = ""
+    user_skills = data.get("skills", "")
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            profile_resp = await client.get(
+                f"{AUTH_SERVICE_URL}/users/me",
+                headers={"x-user-id": user_id_str}
+            )
+            if profile_resp.status_code == 200:
+                profile = profile_resp.json()
+                resume_text = profile.get("resume_text") or ""
+                # Merge profile skills with any skills provided in session request
+                profile_skills = profile.get("skills") or ""
+                user_skills = data.get("skills") or profile_skills
+                print(f"[Interview] Resume text: {len(resume_text)} chars, skills: {user_skills[:50]}")
+    except Exception as e:
+        print(f"[Interview] Could not fetch user profile: {e}")
+
     # Call Question Service
     questions_list: list[str] = []
     try:
@@ -72,11 +99,12 @@ async def create_interview(
             q_payload = {
                 "company":        session.company_name,
                 "target_role":    session.target_role or "",
-                "skills":         data.get("skills", ""),
+                "skills":         user_skills,
                 "job_description": session.job_description,
                 "count":          session.questions_count,
                 "persona":        session.interviewer_persona,
                 "strictness":     session.strictness_level,
+                "resume_text":    resume_text,
             }
             resp = await client.post(f"{QUESTION_SERVICE_URL}/generate", json=q_payload)
             if resp.status_code == 200:
