@@ -38,25 +38,30 @@ def health():
 
 @app.get("/debug/gemini")
 async def debug_gemini():
-    """Direct Gemini test — shows exactly what's failing."""
-    from .engine import gemini_model, GOOGLE_API_KEY, TAVILY_API_KEY
+    """Direct Gemini test using the new google.genai SDK."""
+    from .engine import gemini_client, gemini_model_name, GOOGLE_API_KEY, TAVILY_API_KEY
     result = {
         "google_api_key_present": bool(GOOGLE_API_KEY),
         "tavily_key_present": bool(TAVILY_API_KEY),
-        "gemini_model_loaded": gemini_model is not None,
+        "gemini_client_loaded": gemini_client is not None,
+        "model_name": gemini_model_name,
         "test_result": None,
         "error": None,
     }
-    if gemini_model:
+    if gemini_client:
         try:
-            resp = gemini_model.generate_content(
-                'Return this exact JSON: {"questions": ["What is PyTorch?"]}',
-                generation_config={"temperature": 0.1, "max_output_tokens": 100,
-                                   "response_mime_type": "application/json"}
+            from google import genai as google_genai
+            response = gemini_client.models.generate_content(
+                model=gemini_model_name,
+                contents='Reply with exactly this JSON: {"questions": ["What is backpropagation?"]}',
+                config=google_genai.types.GenerateContentConfig(
+                    temperature=0.1,
+                    max_output_tokens=100,
+                )
             )
-            result["test_result"] = resp.text[:200]
+            result["test_result"] = response.text[:300]
         except Exception as e:
-            result["error"] = str(e)
+            result["error"] = f"{type(e).__name__}: {str(e)[:500]}"
     return result
 
 
