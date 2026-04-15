@@ -73,44 +73,56 @@ async def create_interview(
     db.add(session)
     db.commit()
 
-    # Fetch user profile (including resume) from auth service
+    # Fetch full user profile directly from shared DB (same PostgreSQL)
     resume_text = ""
     user_skills = data.get("skills", "")
+    user_full_name = ""
+    user_experience_years = 0
+    user_education = ""
+    user_github_url = ""
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            profile_resp = await client.get(
-                f"{AUTH_SERVICE_URL}/users/me",
-                headers={"x-user-id": user_id_str}
-            )
-            if profile_resp.status_code == 200:
-                profile = profile_resp.json()
-                resume_text = profile.get("resume_text") or ""
-                # Merge profile skills with any skills provided in session request
-                profile_skills = profile.get("skills") or ""
-                user_skills = data.get("skills") or profile_skills
-                print(f"[Interview] Resume text: {len(resume_text)} chars, skills: {user_skills[:50]}")
+        from sqlalchemy import text as sql_text
+        row = db.execute(
+            sql_text("SELECT full_name, skills, experience_years, education, github_url, resume_text "
+                     "FROM users WHERE id = :uid"),
+            {"uid": str(user_uuid)}
+        ).fetchone()
+        if row:
+            user_full_name = row[0] or ""
+            profile_skills = row[1] or ""
+            user_experience_years = row[2] or 0
+            user_education = row[3] or ""
+            user_github_url = row[4] or ""
+            resume_text = row[5] or ""
+            user_skills = data.get("skills") or profile_skills
+            print(f"[Interview] Profile loaded: name={user_full_name}, exp={user_experience_years}yr, "
+                  f"resume={len(resume_text)} chars, skills={user_skills[:60]}")
     except Exception as e:
         print(f"[Interview] Could not fetch user profile: {e}")
 
-    # Call Question Service
+    # Call Question Service with full profile + JD context
     questions_list: list[str] = []
     try:
         async with httpx.AsyncClient(timeout=90.0) as client:
             q_payload = {
-                "company":        session.company_name,
-                "target_role":    session.target_role or "",
-                "skills":         user_skills,
-                "job_description": session.job_description,
-                "count":          session.questions_count,
-                "persona":        session.interviewer_persona,
-                "strictness":     session.strictness_level,
-                "resume_text":    resume_text,
+                "company":          session.company_name,
+                "target_role":      session.target_role or "",
+                "skills":           user_skills,
+                "job_description":  session.job_description,
+                "count":            session.questions_count,
+                "persona":          session.interviewer_persona,
+                "strictness":       session.strictness_level,
+                "resume_text":      resume_text,
+                "full_name":        user_full_name,
+                "experience_years": user_experience_years,
+                "education":        user_education,
+                "github_url":       user_github_url,
             }
             resp = await client.post(f"{QUESTION_SERVICE_URL}/generate", json=q_payload)
             if resp.status_code == 200:
                 questions_list = resp.json().get("questions", [])
             else:
-                print(f"[Interview] Question service error: {resp.status_code}")
+                print(f"[Interview] Question service error: {resp.status_code} {resp.text[:200]}")
     except Exception as e:
         print(f"[Interview] Question service unavailable: {e}")
 
