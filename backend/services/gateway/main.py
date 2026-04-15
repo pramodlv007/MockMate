@@ -63,17 +63,21 @@ def _extract_user_id(request: Request) -> str | None:
     except JWTError:
         return None
 
+import asyncio as _asyncio
+
 async def _proxy(request: Request, target_base: str, path_suffix: str) -> Response:
-    """Forward a request verbatim to a downstream microservice."""
+    """Forward a request verbatim to a downstream microservice.
+    Retries up to 3 times on 502/503 to handle Render free-tier cold starts.
+    """
     url = f"{target_base}{path_suffix}"
     body = await request.body()
 
-    # Copy headers, strip host so the downstream service sees its own
+    # Copy headers, strip hop-by-hop headers that shouldn't be forwarded
     forward_headers = {
         k: v for k, v in request.headers.items()
-        if k.lower() not in ("host",)
+        if k.lower() not in ("host", "transfer-encoding", "connection")
     }
-    
+
     # Inject authenticated user_id for downstream services
     user_id = _extract_user_id(request)
     if user_id:
@@ -83,33 +87,65 @@ async def _proxy(request: Request, target_base: str, path_suffix: str) -> Respon
     if request.client:
         forward_headers["x-forwarded-for"] = request.client.host
 
-    async with httpx.AsyncClient(timeout=90.0) as client:
+    MAX_RETRIES = 3
+    COLD_START_WAIT = 15  # seconds — Render free tier cold start ~15-30s
+
+    last_resp = None
+    for attempt in range(MAX_RETRIES):
         try:
-            resp = await client.request(
-                method=request.method,
-                url=url,
-                headers=forward_headers,
-                content=body,
-                params=dict(request.query_params),
-                cookies=dict(request.cookies),
+            async with httpx.AsyncClient(timeout=90.0) as client:
+                resp = await client.request(
+                    method=request.method,
+                    url=url,
+                    headers=forward_headers,
+                    content=body,
+                    params=dict(request.query_params),
+                    cookies=dict(request.cookies),
+                )
+            last_resp = resp
+
+            # Detect Render cold-start: 502/503 with HTML body (not our JSON errors)
+            is_cold_start = (
+                resp.status_code in (502, 503)
+                and "text/html" in resp.headers.get("content-type", "")
             )
+            if is_cold_start and attempt < MAX_RETRIES - 1:
+                print(f"[Gateway] Cold-start detected for {target_base}, retrying in {COLD_START_WAIT}s (attempt {attempt+1}/{MAX_RETRIES})")
+                await _asyncio.sleep(COLD_START_WAIT)
+                continue
+            break  # success or non-retryable error
+
         except httpx.ConnectError:
+            if attempt < MAX_RETRIES - 1:
+                print(f"[Gateway] ConnectError for {target_base}, retrying in {COLD_START_WAIT}s (attempt {attempt+1}/{MAX_RETRIES})")
+                await _asyncio.sleep(COLD_START_WAIT)
+                continue
             raise HTTPException(502, detail=f"Service unavailable: {target_base}")
         except httpx.TimeoutException:
             raise HTTPException(504, detail=f"Upstream timed out: {target_base}")
 
+    if last_resp is None:
+        raise HTTPException(502, detail=f"Service unavailable: {target_base}")
+
     # Forward all response headers EXCEPT CORS ones (to avoid duplicates)
     resp_headers = {
-        k: v for k, v in resp.headers.items()
-        if k.lower() not in ("transfer-encoding", "access-control-allow-origin", "access-control-allow-credentials", "access-control-allow-methods", "access-control-allow-headers")
+        k: v for k, v in last_resp.headers.items()
+        if k.lower() not in (
+            "transfer-encoding",
+            "access-control-allow-origin",
+            "access-control-allow-credentials",
+            "access-control-allow-methods",
+            "access-control-allow-headers",
+        )
     }
 
     return Response(
-        content=resp.content,
-        status_code=resp.status_code,
+        content=last_resp.content,
+        status_code=last_resp.status_code,
         headers=resp_headers,
-        media_type=resp.headers.get("content-type"),
+        media_type=last_resp.headers.get("content-type"),
     )
+
 
 
 # ─── Health ───────────────────────────────────────────────────────────────────
