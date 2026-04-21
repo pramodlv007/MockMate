@@ -41,12 +41,35 @@ export const History = () => {
                                     </p>
                                 </div>
 
-                                <div className="flex items-center gap-6">
+                                <div className="flex items-center gap-3 flex-wrap">
                                     {interview.overall_score ? (
-                                        <div className="flex items-center text-sm font-medium text-emerald-400 bg-emerald-400/10 px-3 py-1 rounded-full whitespace-nowrap">
-                                            <Trophy className="w-4 h-4 mr-1.5" />
-                                            Score: {interview.overall_score}/100
-                                        </div>
+                                        <>
+                                            <div className="flex items-center text-sm font-medium text-emerald-400 bg-emerald-400/10 px-3 py-1 rounded-full whitespace-nowrap">
+                                                <Trophy className="w-4 h-4 mr-1.5" />
+                                                {interview.overall_score}/100
+                                            </div>
+                                            {/* Mini score breakdown */}
+                                            {(() => {
+                                                try {
+                                                    const fb = JSON.parse(interview.feedback_summary || '{}');
+                                                    const bd = fb.score_breakdown;
+                                                    if (!bd) return null;
+                                                    return (
+                                                        <div className="flex items-center gap-2 text-xs">
+                                                            <span className="px-1.5 py-0.5 rounded" style={{ background: 'rgba(16,185,129,0.1)', color: '#10b981' }}>
+                                                                C:{bd.content?.score}
+                                                            </span>
+                                                            <span className="px-1.5 py-0.5 rounded" style={{ background: 'rgba(6,182,212,0.1)', color: '#06b6d4' }}>
+                                                                M:{bd.communication?.score}
+                                                            </span>
+                                                            <span className="px-1.5 py-0.5 rounded" style={{ background: 'rgba(139,92,246,0.1)', color: '#8b5cf6' }}>
+                                                                P:{bd.presence?.score}
+                                                            </span>
+                                                        </div>
+                                                    );
+                                                } catch { return null; }
+                                            })()}
+                                        </>
                                     ) : (
                                         <div className="flex items-center text-sm font-medium text-gray-400 bg-gray-800/50 border border-gray-700/50 px-3 py-1 rounded-full whitespace-nowrap">
                                             <Activity className="w-4 h-4 mr-1.5" />

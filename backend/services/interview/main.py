@@ -117,6 +117,7 @@ async def create_interview(
                 "experience_years": user_experience_years,
                 "education":        user_education,
                 "github_url":       user_github_url,
+                "user_id":          str(user_uuid),  # for cross-session deduplication
             }
             resp = await client.post(f"{QUESTION_SERVICE_URL}/generate", json=q_payload)
             if resp.status_code == 200:
@@ -220,19 +221,44 @@ async def upload_video(
     # Kick off evaluation asynchronously (fire and forget)
     questions_text = [q.content for q in session.questions]
     question_ids = [str(q.id) for q in session.questions]
+
+    # Fetch profile data for resume-grounded evaluation
+    eval_resume_text = ""
+    eval_skills = ""
+    eval_experience_years = 0
+    eval_education = ""
+    try:
+        from sqlalchemy import text as sql_text
+        row = db.execute(
+            sql_text("SELECT skills, experience_years, education, resume_text FROM users WHERE id = :uid"),
+            {"uid": str(session.user_id)}
+        ).fetchone()
+        if row:
+            eval_skills = row[0] or ""
+            eval_experience_years = row[1] or 0
+            eval_education = row[2] or ""
+            eval_resume_text = row[3] or ""
+    except Exception as e:
+        print(f"[Interview] Could not fetch profile for eval: {e}")
+
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             await client.post(
                 f"{EVALUATION_SERVICE_URL}/evaluation/start",
                 json={
-                    "interview_id":   str(session.id),
-                    "video_path":     str(file_path),
-                    "company":        session.company_name,
-                    "job_description": session.job_description,
-                    "persona":        session.interviewer_persona,
-                    "strictness":     session.strictness_level,
-                    "questions":      questions_text,
-                    "question_ids":   question_ids,
+                    "interview_id":     str(session.id),
+                    "video_path":       str(file_path),
+                    "company":          session.company_name,
+                    "job_description":  session.job_description,
+                    "persona":          session.interviewer_persona,
+                    "strictness":       session.strictness_level,
+                    "questions":        questions_text,
+                    "question_ids":     question_ids,
+                    "resume_text":      eval_resume_text,
+                    "skills":           eval_skills,
+                    "experience_years": eval_experience_years,
+                    "target_role":      session.target_role or "",
+                    "education":        eval_education,
                 },
             )
         session.status = "evaluating"
@@ -247,6 +273,42 @@ async def upload_video(
         "size_bytes": len(contents),
         "status": session.status,
     }
+
+
+# ─── Save Browser-Captured Per-Question Transcripts ──────────────────────────────
+@app.post("/{interview_id}/transcripts")
+async def save_transcripts(
+    interview_id: str,
+    data: dict,
+    db: Session = Depends(get_db),
+):
+    """Save browser-captured per-question transcripts (from Web Speech API)."""
+    try:
+        iid = uuid.UUID(interview_id)
+    except ValueError:
+        raise HTTPException(400, "Invalid interview_id")
+
+    session = db.query(models.InterviewSession).filter(
+        models.InterviewSession.id == iid
+    ).first()
+    if not session:
+        raise HTTPException(404, "Interview not found")
+
+    transcripts = data.get("transcripts", {})
+    saved = 0
+    for idx_str, text in transcripts.items():
+        try:
+            idx = int(idx_str)
+        except ValueError:
+            continue
+        qs = session.questions
+        if idx < len(qs):
+            qs[idx].transcript = text
+            saved += 1
+
+    db.commit()
+    print(f"[Interview] Saved {saved} browser transcripts for {interview_id}")
+    return {"message": "Transcripts saved", "count": saved}
 
 
 # ─── Evaluation Patch (called BY Evaluation Service) ─────────────────────────

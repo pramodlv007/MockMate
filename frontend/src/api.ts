@@ -110,6 +110,78 @@ export interface Question {
     order_index?: number;
     transcript?: string;
     score?: number;
+    evaluation?: string; // JSON string of per-question eval
+}
+
+export interface PerQuestionResult {
+    question: string;
+    answer_summary: string;
+    scores: {
+        technical_accuracy: number;
+        depth: number;
+        relevance: number;
+        structure: number;
+        resume_alignment: number;
+    };
+    overall: number;
+    category: 'STRONG' | 'ADEQUATE' | 'WEAK';
+    what_was_good: string;
+    what_was_missing: string;
+    ideal_answer_outline: string;
+    resume_gap_flag: string | null;
+}
+
+export interface SpeechMetrics {
+    words_per_minute: number;
+    pace_assessment: string;
+    filler_word_count: number;
+    filler_ratio_percent: number;
+    filler_breakdown: { word: string; count: number }[];
+    word_count: number;
+}
+
+export interface NonVerbalDashboard {
+    eye_contact_percent: number;
+    good_posture_percent: number;
+    engagement_percent: number;
+    concerns: string[];
+    timeline_notes?: string;
+}
+
+export interface Mistake {
+    type: string;
+    question_index: number;
+    quote: string;
+    problem: string;
+    better_approach: string;
+}
+
+export interface EvaluationFeedback {
+    overall_score: number;
+    score_breakdown: {
+        content: { score: number; weight: string; explanation: string };
+        communication: { score: number; weight: string; penalties: string[] };
+        presence: { score: number; weight: string; components: { eye_contact: number; posture: number; engagement: number } };
+    };
+    hire_recommendation: string;
+    executive_summary: string;
+    per_question_results: PerQuestionResult[];
+    speech_metrics: SpeechMetrics;
+    non_verbal_dashboard: NonVerbalDashboard;
+    resume_alignment_summary: {
+        verified_claims: string[];
+        unverified_claims: string[];
+        gaps_vs_jd: string[];
+    };
+    comparison_to_role: {
+        meets_requirements: string[];
+        below_requirements: string[];
+        exceeds_requirements: string[];
+    };
+    strengths: string[];
+    critical_improvements: string[];
+    top_mistakes: Mistake[];
+    training_plan_7_day: Record<string, { focus: string; duration_minutes: number; drills: string[] }>;
 }
 
 export interface InterviewSession {
