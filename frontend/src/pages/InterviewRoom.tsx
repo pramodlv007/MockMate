@@ -268,7 +268,7 @@ export const InterviewRoom = () => {
                     <div>
                         <div className="text-sm font-semibold" style={{ color: t.text }}>{t.name} Interview</div>
                         <div className="text-xs" style={{ color: t.subtext }}>
-                            {session.job_title || 'Technical Interview'}
+                            {session.target_role || 'Technical Interview'}
                         </div>
                     </div>
                 </div>
