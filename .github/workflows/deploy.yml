@@ -1,19 +1,16 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# MockMate — GitHub Actions CI/CD Pipeline
+# MockMate — GitHub Actions CI/CD Pipeline (AWS EC2)
 #
 # Triggers on every push to `main`:
-#   Job 1: test        — lint, build frontend, run backend tests
-#   Job 2: deploy-frontend  — push to Vercel (prod)
-#   Job 3: deploy-backend   — trigger Render redeploy hooks
-#   Job 4: deploy-lambda    — sam build + sam deploy to AWS
+#   Job 1: test    — install deps, build frontend, run backend tests
+#   Job 2: deploy  — build frontend, SSH into EC2, git pull, rebuild Docker,
+#                    sync frontend dist to nginx root
 #
 # Required GitHub Secrets (Settings → Secrets → Actions):
-#   VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID
-#   RENDER_DEPLOY_HOOK_GATEWAY, RENDER_DEPLOY_HOOK_AUTH,
-#   RENDER_DEPLOY_HOOK_PROFILE, RENDER_DEPLOY_HOOK_QUESTION,
-#   RENDER_DEPLOY_HOOK_INTERVIEW, RENDER_DEPLOY_HOOK_EVALUATION
-#   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION
-#   INTERVIEW_SERVICE_URL  (your Render interview service URL)
+#   EC2_HOST       — public IPv4 of your EC2 instance  (e.g. 3.19.239.13)
+#   EC2_USER       — SSH user                           (ec2-user)
+#   EC2_SSH_KEY    — contents of your .pem file         (-----BEGIN RSA...)
+#   VITE_API_URL   — backend URL served by nginx        (http://3.19.239.13)
 # ─────────────────────────────────────────────────────────────────────────────
 
 name: MockMate CI/CD
@@ -26,12 +23,12 @@ on:
 
 concurrency:
   group: ${{ github.ref }}
-  cancel-in-progress: true   # cancel old runs on new push
+  cancel-in-progress: true
 
 # ── Job 1: Test ───────────────────────────────────────────────────────────────
 jobs:
   test:
-    name: 🧪 Test & Build
+    name: Test & Build
     runs-on: ubuntu-latest
 
     steps:
@@ -52,7 +49,7 @@ jobs:
         run: |
           cd backend
           python -m pytest tests/ -v --tb=short 2>/dev/null \
-            || echo "⚠️  No tests found — skipping (add tests/test_*.py to enable)"
+            || echo "No tests found — skipping"
 
       # ── Node / Frontend ───────────────────────────────────────────────────
       - name: Set up Node 20
@@ -65,21 +62,21 @@ jobs:
       - name: Install frontend dependencies
         run: cd frontend && npm ci
 
-      - name: Build frontend (validates no TS errors)
+      - name: Build frontend
         run: cd frontend && npm run build
         env:
-          VITE_API_URL: https://mockmate-gateway.onrender.com
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
 
-      - name: Upload frontend dist as artifact
+      - name: Upload frontend dist artifact
         uses: actions/upload-artifact@v4
         with:
           name: frontend-dist
           path: frontend/dist
           retention-days: 1
 
-  # ── Job 2: Deploy Frontend → Vercel ──────────────────────────────────────────
-  deploy-frontend:
-    name: 🚀 Deploy Frontend → Vercel
+  # ── Job 2: Deploy → EC2 ───────────────────────────────────────────────────
+  deploy:
+    name: Deploy to EC2
     needs: test
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
@@ -88,6 +85,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Re-build frontend so we have the dist folder in this job's workspace
       - name: Set up Node 20
         uses: actions/setup-node@v4
         with:
@@ -95,170 +93,89 @@ jobs:
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Install Vercel CLI
-        run: npm install -g vercel@latest
-
-      - name: Pull Vercel environment info
-        working-directory: frontend
-        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
-
-      - name: Build for Vercel
-        working-directory: frontend
-        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+      - name: Install & build frontend
+        run: cd frontend && npm ci && npm run build
         env:
-          VITE_API_URL: ${{ secrets.VITE_API_URL || 'https://mockmate-gateway.onrender.com' }}
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
 
-      - name: Deploy to Vercel production
-        working-directory: frontend
-        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
-
-  # ── Job 3: Deploy Backend → Render ───────────────────────────────────────────
-  deploy-backend:
-    name: 🐳 Deploy Backend → Render
-    needs: test
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-
-    steps:
-      - name: Trigger Render deploy — Gateway
-        run: curl -fsS -X POST "${{ secrets.RENDER_DEPLOY_HOOK_GATEWAY }}" | jq .
-
-      - name: Trigger Render deploy — Auth
-        run: curl -fsS -X POST "${{ secrets.RENDER_DEPLOY_HOOK_AUTH }}" | jq .
-
-      - name: Trigger Render deploy — Profile
-        run: curl -fsS -X POST "${{ secrets.RENDER_DEPLOY_HOOK_PROFILE }}" | jq .
-
-      - name: Trigger Render deploy — Question
-        run: curl -fsS -X POST "${{ secrets.RENDER_DEPLOY_HOOK_QUESTION }}" | jq .
-
-      - name: Trigger Render deploy — Interview
-        run: curl -fsS -X POST "${{ secrets.RENDER_DEPLOY_HOOK_INTERVIEW }}" | jq .
-
-      - name: Trigger Render deploy — Evaluation
-        run: curl -fsS -X POST "${{ secrets.RENDER_DEPLOY_HOOK_EVALUATION }}" | jq .
-
-      - name: Wait for Gateway health check
+      # ── Write SSH key ─────────────────────────────────────────────────────
+      - name: Write SSH key
         run: |
-          echo "⏳ Waiting for gateway to come online..."
-          for i in $(seq 1 24); do
-            STATUS=$(curl -sf https://mockmate-gateway.onrender.com/health | jq -r '.status' 2>/dev/null || echo "")
-            if [ "$STATUS" = "ok" ]; then
-              echo "✅ Gateway is healthy!"
-              exit 0
-            fi
-            echo "  Attempt $i/24 — retrying in 10s..."
-            sleep 10
-          done
-          echo "⚠️  Gateway did not respond in time (Render may still be pulling image)"
-          exit 0   # Don't fail the CI — Render deploys async
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/ec2.pem
+          chmod 600 ~/.ssh/ec2.pem
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
-  # ── Job 4: Deploy Lambda → AWS ────────────────────────────────────────────────
-  deploy-lambda:
-    name: ☁️  Deploy Lambda → AWS
-    needs: test
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            ${{ secrets.AWS_REGION || 'us-east-1' }}
-
-      - name: Set up Python 3.11 for SAM
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install AWS SAM CLI
-        run: pip install aws-sam-cli
-
-      # Bundle backend source into each Lambda package directory.
-      # Lambda functions import services.question.engine / services.evaluation.*
-      # SAM only packages what's inside lambda/<name>/ so we copy needed modules first.
-      - name: Bundle backend source into Lambda packages
+      # ── Sync frontend dist to EC2 ─────────────────────────────────────────
+      - name: Sync frontend dist to EC2
         run: |
-          echo "Bundling question_generate..."
-          DEST=aws/lambda/question_generate/backend
-          mkdir -p $DEST/services
-          cp -r backend/services/question    $DEST/services/
-          cp -r backend/common               $DEST/
-          cp    backend/services/__init__.py $DEST/services/ 2>/dev/null || true
+          rsync -az --delete \
+            -e "ssh -i ~/.ssh/ec2.pem -o StrictHostKeyChecking=no" \
+            frontend/dist/ \
+            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/${{ secrets.EC2_USER }}/MockMate/frontend/dist/
 
-          echo "Bundling evaluation_trigger..."
-          DEST=aws/lambda/evaluation_trigger/backend
-          mkdir -p $DEST/services
-          cp -r backend/services/question    $DEST/services/
-          cp -r backend/services/evaluation  $DEST/services/
-          cp -r backend/common               $DEST/
-          cp    backend/services/__init__.py $DEST/services/ 2>/dev/null || true
-
-          echo "Backend source bundled successfully"
-
-      - name: SAM build
-        working-directory: aws
-        run: sam build --use-container
-
-      - name: SAM deploy
-        working-directory: aws
+      # ── Pull latest code & rebuild Docker on EC2 ──────────────────────────
+      - name: Deploy backend on EC2
         run: |
-          sam deploy \
-            --no-confirm-changeset \
-            --no-fail-on-empty-changeset \
-            --parameter-overrides \
-              "InterviewServiceURL=${{ secrets.INTERVIEW_SERVICE_URL }}" \
-              "Stage=prod" \
-            --tags "GitSha=${{ github.sha }}" "DeployedBy=github-actions"
+          ssh -i ~/.ssh/ec2.pem \
+              -o StrictHostKeyChecking=no \
+              ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'ENDSSH'
+            set -e
+            cd ~/MockMate
 
-      - name: Output Lambda URLs
-        working-directory: aws
+            echo "==> Pulling latest code..."
+            git fetch origin main
+            git checkout main
+            git pull origin main
+
+            echo "==> Rebuilding Docker image..."
+            docker build -f Dockerfile.consolidated -t mockmate .
+
+            echo "==> Restarting container..."
+            docker stop mockmate 2>/dev/null || true
+            docker rm   mockmate 2>/dev/null || true
+            docker run -d \
+              --name mockmate \
+              --env-file .env \
+              -p 8000:8000 \
+              --restart unless-stopped \
+              mockmate
+
+            echo "==> Waiting for health check..."
+            for i in $(seq 1 15); do
+              STATUS=$(curl -sf http://localhost:8000/health | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null || echo "")
+              if [ "$STATUS" = "ok" ]; then
+                echo "Backend is healthy!"
+                break
+              fi
+              echo "  Attempt $i/15 — retrying in 5s..."
+              sleep 5
+            done
+
+            echo "==> Reloading nginx..."
+            sudo nginx -t && sudo systemctl reload nginx
+          ENDSSH
+
+      # ── Smoke test ────────────────────────────────────────────────────────
+      - name: Smoke test
         run: |
-          echo "📋 Deployed Lambda endpoints:"
-          aws cloudformation describe-stacks \
-            --stack-name mockmate \
-            --query "Stacks[0].Outputs" \
-            --output table
+          echo "Testing API health..."
+          curl -sf http://${{ secrets.EC2_HOST }}/health \
+            | python3 -c "import sys,json; d=json.load(sys.stdin); print('API:', d.get('status')); exit(0 if d.get('status')=='ok' else 1)"
 
-  # ── Job 5: Post-Deploy Smoke Test ─────────────────────────────────────────────
-  smoke-test:
-    name: 🔥 Smoke Test
-    needs: [deploy-frontend, deploy-backend, deploy-lambda]
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-
-    steps:
-      - name: Test Gateway health
-        run: |
-          RESP=$(curl -sf https://mockmate-gateway.onrender.com/health || echo '{"status":"unavailable"}')
-          echo "Gateway: $RESP"
-
-      - name: Test Lambda question health
-        run: |
-          LAMBDA_URL=$(aws cloudformation describe-stacks \
-            --stack-name mockmate \
-            --query "Stacks[0].Outputs[?OutputKey=='QuestionGenerateUrl'].OutputValue" \
-            --output text 2>/dev/null || echo "not-deployed")
-          echo "Lambda question endpoint: $LAMBDA_URL"
-        env:
-          AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION:    ${{ secrets.AWS_REGION || 'us-east-1' }}
+          echo "Testing frontend..."
+          HTTP_CODE=$(curl -so /dev/null -w "%{http_code}" http://${{ secrets.EC2_HOST }}/)
+          echo "Frontend HTTP $HTTP_CODE"
+          [ "$HTTP_CODE" = "200" ] || exit 1
 
       - name: Summary
+        if: always()
         run: |
-          echo "### 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "### Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Service | URL |" >> $GITHUB_STEP_SUMMARY
-          echo "|---------|-----|" >> $GITHUB_STEP_SUMMARY
-          echo "| Frontend | https://yourdomain.com |" >> $GITHUB_STEP_SUMMARY
-          echo "| API Gateway | https://mockmate-gateway.onrender.com |" >> $GITHUB_STEP_SUMMARY
-          echo "| Lambda Questions | See AWS Outputs above |" >> $GITHUB_STEP_SUMMARY
-          echo "| CloudWatch | https://console.aws.amazon.com/cloudwatch |" >> $GITHUB_STEP_SUMMARY
+          echo "| Target | URL |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-----|" >> $GITHUB_STEP_SUMMARY
+          echo "| App | http://${{ secrets.EC2_HOST }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| API Health | http://${{ secrets.EC2_HOST }}/health |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
