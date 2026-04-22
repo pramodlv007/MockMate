@@ -115,8 +115,44 @@ def _parse_json(raw: Optional[str]) -> Optional[dict]:
         return None
 
 
+# --- S3 Download Helper -------------------------------------------------------
+S3_BUCKET = os.getenv("S3_BUCKET_NAME")
+s3_client = None
+if S3_BUCKET:
+    try:
+        import boto3
+        s3_client = boto3.client("s3")
+        print("[EvalService] S3 client initialized")
+    except Exception as e:
+        print(f"[EvalService] S3 init error: {e}")
+
+
+def _ensure_local(video_path: str) -> str:
+    """If video_path is an S3 URI, download to a temp file and return local path."""
+    if not video_path.startswith("s3://"):
+        return video_path
+    if not s3_client:
+        print("[EvalService] S3 URI received but no S3 client — cannot download")
+        return video_path
+    try:
+        # Parse s3://bucket/key
+        without_prefix = video_path[5:]
+        bucket, key = without_prefix.split("/", 1)
+        suffix = "." + key.rsplit(".", 1)[-1] if "." in key else ".webm"
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+        s3_client.download_fileobj(bucket, key, tmp)
+        tmp.close()
+        print(f"[EvalService] Downloaded {video_path} → {tmp.name}")
+        return tmp.name
+    except Exception as e:
+        print(f"[EvalService] S3 download error: {e}")
+        return video_path
+
+
 # --- Agent 1: Scribe (Audio Transcription) ------------------------------------
 def _transcribe(video_path: str) -> str:
+    video_path = _ensure_local(video_path)
     path = Path(video_path)
     if not path.exists():
         print(f"[Scribe] Video file not found: {video_path}")
@@ -146,6 +182,7 @@ def _transcribe(video_path: str) -> str:
 # --- Agent 3: Observer (Vision Analysis) ----------------------------------------
 def _analyze_frames(video_path: str) -> dict:
     defaults = {"eye_contact_percent": 65, "good_posture_percent": 70, "engagement_percent": 65, "concerns": []}
+    video_path = _ensure_local(video_path)
     path = Path(video_path)
     if not path.exists():
         return defaults

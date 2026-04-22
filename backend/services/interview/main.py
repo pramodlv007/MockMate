@@ -19,6 +19,17 @@ load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
 models.Base.metadata.create_all(bind=engine)
 
+# ─── S3 Setup (optional — falls back to local storage if not configured) ─────
+S3_BUCKET = os.getenv("S3_BUCKET_NAME")
+s3_client = None
+if S3_BUCKET:
+    try:
+        import boto3
+        s3_client = boto3.client("s3")
+        print(f"[Interview] S3 storage enabled: s3://{S3_BUCKET}")
+    except Exception as e:
+        print(f"[Interview] S3 init error: {e}")
+
 app = FastAPI(title="MockMate Interview Service", version="2.0.0")
 
 @app.exception_handler(Exception)
@@ -204,19 +215,33 @@ async def upload_video(
 
     ext = file.filename.rsplit(".", 1)[-1] if "." in file.filename else "webm"
     filename = f"{interview_id}.{ext}"
-    file_path = UPLOAD_DIR / filename
-
     contents = await file.read()
-    with open(file_path, "wb") as f:
-        f.write(contents)
 
-    session.video_storage_path = str(file_path)
+    if s3_client and S3_BUCKET:
+        # Upload to S3 — works across any number of instances
+        s3_key = f"videos/{filename}"
+        s3_client.put_object(
+            Bucket=S3_BUCKET,
+            Key=s3_key,
+            Body=contents,
+            ContentType="video/webm",
+        )
+        video_storage_path = f"s3://{S3_BUCKET}/{s3_key}"
+        print(f"[Interview] Video uploaded to S3: {video_storage_path} ({len(contents):,} bytes)")
+    else:
+        # Local fallback (dev / no S3 configured)
+        file_path = UPLOAD_DIR / filename
+        with open(file_path, "wb") as f:
+            f.write(contents)
+        video_storage_path = str(file_path)
+        print(f"[Interview] Video saved locally: {video_storage_path} ({len(contents):,} bytes)")
+
+    session.video_storage_path = video_storage_path
     session.status = "completed"
     session.completed_at = datetime.utcnow()
     db.commit()
     db.refresh(session)
 
-    print(f"[Interview] Video saved: {file_path} ({len(contents):,} bytes)")
 
     # Kick off evaluation asynchronously (fire and forget)
     questions_text = [q.content for q in session.questions]

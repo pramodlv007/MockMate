@@ -34,3 +34,6 @@ python-docx
 # Video frame extraction (fallback only — Gemini native video is primary)
 moviepy
 Pillow
+
+# AWS SDK
+boto3
