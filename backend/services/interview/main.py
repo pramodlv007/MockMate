@@ -3,7 +3,8 @@ MockMate Interview Service — Port 8004
 Manages interview sessions: create, fetch, upload video, patch evaluation results.
 Calls Question Service to generate questions on session creation.
 """
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Header, Request
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Request
+from common.auth import get_current_user_id
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
@@ -57,13 +58,8 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 async def create_interview(
     data: dict,
     db: Session = Depends(get_db),
-    x_user_id: str = Header(None),
+    user_id_str: str = Depends(get_current_user_id),
 ):
-    # Resolve user_id from header or body
-    user_id_str = x_user_id or data.get("user_id")
-    if not user_id_str:
-        raise HTTPException(401, "Not authenticated")
-
     try:
         user_uuid = uuid.UUID(user_id_str)
     except ValueError:
