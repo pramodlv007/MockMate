@@ -23,28 +23,31 @@ backend_dir = Path(__file__).parent.parent.parent
 config = dotenv_values(backend_dir / ".env")
 
 GOOGLE_API_KEY = config.get("GOOGLE_API_KEY") or os.getenv("GOOGLE_API_KEY")
-OPENAI_API_KEY = config.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
+DEEPSEEK_API_KEY = config.get("DEEPSEEK_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
 TAVILY_API_KEY = config.get("TAVILY_API_KEY") or os.getenv("TAVILY_API_KEY")
 
-print(f"[QuestionEngine] Gemini Key: {bool(GOOGLE_API_KEY)} | OpenAI Key: {bool(OPENAI_API_KEY)} | Tavily Key: {bool(TAVILY_API_KEY)}")
+print(f"[QuestionEngine] Gemini Key: {bool(GOOGLE_API_KEY)} | DeepSeek Key: {bool(DEEPSEEK_API_KEY)} | Tavily Key: {bool(TAVILY_API_KEY)}")
 
 
 # ── Gemini REST (no SDK) ────────────────────────────────────────────────────────
-GEMINI_REST_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent"
+GEMINI_REST_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 gemini_available = bool(GOOGLE_API_KEY)
 gemini_model = gemini_available   # for health-check alias
 gemini_client = gemini_available  # for health-check alias
-gemini_model_name = "gemini-2.0-flash-lite"
+gemini_model_name = "gemini-2.5-flash"
 
-# ── OpenAI (fallback) ───────────────────────────────────────────────────────────
-openai_client = None
-if OPENAI_API_KEY:
+# ── DeepSeek (fallback — OpenAI-compatible API, 10x cheaper than GPT-4o) ────────
+deepseek_client = None
+if DEEPSEEK_API_KEY:
     try:
         from openai import OpenAI
-        openai_client = OpenAI(api_key=OPENAI_API_KEY)
-        print("[QuestionEngine] OpenAI client ready (fallback)")
+        deepseek_client = OpenAI(
+            api_key=DEEPSEEK_API_KEY,
+            base_url="https://api.deepseek.com",
+        )
+        print("[QuestionEngine] DeepSeek client ready (fallback)")
     except Exception as e:
-        print(f"[QuestionEngine] OpenAI init error: {e}")
+        print(f"[QuestionEngine] DeepSeek init error: {e}")
 
 
 # ═════════════════════════════════════════════════════════════════════════════════
@@ -143,6 +146,73 @@ def _classify_domain(skills: str, jd: str, role: str) -> str:
 
 
 # ═════════════════════════════════════════════════════════════════════════════════
+# 2b. RESUME INTELLIGENCE EXTRACTION
+# ═════════════════════════════════════════════════════════════════════════════════
+def _extract_resume_intelligence(resume_text: str) -> dict:
+    """Pre-process resume into structured data so question prompt can reference specifics."""
+    if not resume_text or len(resume_text.strip()) < 100:
+        return {}
+
+    prompt = """Extract from this resume into STRICTLY valid JSON. Be precise — use exact names and technologies as written in the resume.
+
+{
+  "projects": [
+    {"name": "exact project name", "tech": ["exact technologies used"], "what_they_built": "one sentence", "scale_or_impact": "numbers if mentioned"}
+  ],
+  "work_experience": [
+    {"company": "name", "role": "title", "duration": "if mentioned", "key_claims": ["specific achievements or responsibilities"]}
+  ],
+  "strongest_skills": ["top 5 skills they've actually USED in projects, not just listed"],
+  "gaps_or_red_flags": ["skills listed but no evidence of use", "buzzwords without depth"],
+  "probing_angles": ["specific claims that an interviewer should press on to verify depth"]
+}
+
+RESUME:
+""" + resume_text[:5000]
+
+    # Use lite model for cheap extraction
+    if GOOGLE_API_KEY:
+        try:
+            payload = {
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {
+                    "temperature": 0.2,
+                    "maxOutputTokens": 2000,
+                    "responseMimeType": "application/json",
+                    "thinkingConfig": {"thinkingBudget": 0},
+                },
+            }
+            resp = httpx.post(
+                "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite-preview-06-17:generateContent",
+                params={"key": GOOGLE_API_KEY},
+                json=payload,
+                timeout=30.0,
+            )
+            if resp.status_code == 200:
+                raw = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+                parsed = json.loads(raw.strip())
+                print(f"[QuestionEngine] Resume intelligence extracted: {len(parsed.get('projects', []))} projects, {len(parsed.get('work_experience', []))} roles")
+                return parsed
+            else:
+                # Fallback to main Gemini model if lite preview isn't available
+                resp2 = httpx.post(
+                    GEMINI_REST_URL,
+                    params={"key": GOOGLE_API_KEY},
+                    json=payload,
+                    timeout=30.0,
+                )
+                if resp2.status_code == 200:
+                    raw = resp2.json()["candidates"][0]["content"]["parts"][0]["text"]
+                    parsed = json.loads(raw.strip())
+                    print(f"[QuestionEngine] Resume intelligence (main model): {len(parsed.get('projects', []))} projects")
+                    return parsed
+        except Exception as e:
+            print(f"[QuestionEngine] Resume extraction error: {e}")
+
+    return {}
+
+
+# ═════════════════════════════════════════════════════════════════════════════════
 # 3. WEB SEARCH — Real interview questions for this company/role
 # ═════════════════════════════════════════════════════════════════════════════════
 def _search_interview_context(company: str, role: str, technologies: list[str]) -> str:
@@ -229,18 +299,48 @@ def _build_combined_prompt(
 
     candidate_block = "\n".join(candidate_lines) if candidate_lines else "No profile data available"
 
-    # ── Section B: Resume Intelligence ──
-    if resume_text and len(resume_text.strip()) > 100:
-        resume_block = f"""=== CANDIDATE'S RESUME ===
+    # ── Section B: Resume Intelligence (STRUCTURED) ──
+    resume_intelligence = _extract_resume_intelligence(resume_text) if resume_text else {}
+
+    if resume_intelligence and resume_intelligence.get("projects"):
+        projects_str = ""
+        for p in resume_intelligence["projects"]:
+            projects_str += f"\n  - Project: {p['name']} | Tech: {', '.join(p.get('tech', []))} | Built: {p.get('what_they_built', 'N/A')}"
+
+        experience_str = ""
+        for w in resume_intelligence.get("work_experience", []):
+            experience_str += f"\n  - {w.get('role', '')} at {w.get('company', '')} | Claims: {'; '.join(w.get('key_claims', []))}"
+
+        probing = resume_intelligence.get("probing_angles", [])
+        probing_str = "\n  - ".join(probing) if probing else "None identified"
+
+        resume_block = f"""=== CANDIDATE'S VERIFIED BACKGROUND ===
+PROJECTS:{projects_str}
+
+WORK EXPERIENCE:{experience_str}
+
+STRONGEST DEMONSTRATED SKILLS: {', '.join(resume_intelligence.get('strongest_skills', []))}
+
+RED FLAGS TO PROBE: {'; '.join(resume_intelligence.get('gaps_or_red_flags', []))}
+
+ANGLES TO PRESS ON:
+  - {probing_str}
+=== END BACKGROUND ===
+
+RESUME-BASED QUESTION RULES:
+- You MUST reference at least {max(2, count // 2)} specific projects or work experiences from above BY NAME.
+- Frame questions like a real interviewer: "I see you built [project] using [tech]. Walk me through how you handled [challenge from JD]."
+- Probe their claims: "You mention [achievement]. What specifically was YOUR contribution vs the team's?"
+- Connect their past to the new role: "At [company] you did [X]. How would you approach that differently at {company} given [JD requirement]?"
+- At least 1 question should target a RED FLAG or GAP identified above."""
+    elif resume_text and len(resume_text.strip()) > 100:
+        resume_block = f"""=== CANDIDATE'S RESUME (raw) ===
 {resume_text[:4000]}
 === END RESUME ===
 
-RESUME-BASED QUESTION RULES:
-- Read the resume above carefully. Identify the candidate's specific PROJECTS, WORK EXPERIENCES, and ACHIEVEMENTS.
-- At least {max(2, count // 2)} out of {count} questions MUST directly reference a specific project, technology choice, or accomplishment from the resume.
-- Frame these as: "In your [Project/Company], you used [Technology] to build [Feature]. How did you handle [specific technical challenge]?"
-- Ask WHY they made specific design decisions in their projects, not just WHAT they built.
-- Probe the depth of their resume claims — ask about edge cases, scale, failure scenarios in their own projects."""
+RESUME-BASED RULES:
+- Reference specific projects and technologies from the resume.
+- At least {max(2, count // 2)} questions must be based on resume claims."""
     else:
         resume_block = "[No resume uploaded — generate all questions from the Job Description and skills only]"
 
@@ -257,6 +357,23 @@ WEB RESEARCH RULES:
 - Match the difficulty and focus areas to what this company's real interviewers emphasize."""
     else:
         web_block = ""
+
+    # ── Section E: Company Interview Intelligence ──
+    from .company_patterns import get_company_pattern
+    company_pattern = get_company_pattern(company)
+    company_intel_block = f"""
+════════════════════════════════════════════════════════
+SECTION E — COMPANY INTERVIEW INTELLIGENCE ({company.upper()})
+════════════════════════════════════════════════════════
+Interview Style: {company_pattern['style']}
+Technical Emphasis: {', '.join(company_pattern['technical_emphasis'])}
+What They Probe For: {company_pattern['what_they_probe']}
+Example Question Patterns (for inspiration, NOT to copy):
+{chr(10).join(f'  - {q}' for q in company_pattern['question_types'])}
+
+RULE: Match {company}'s actual interview style described above.
+If web research is available above, it takes priority over these patterns."""
+
 
     # ── Section D: Domain-specific guidance ──
     domain_guides = {
@@ -397,6 +514,8 @@ def _call_gemini(prompt: str, count: int) -> list[str]:
                 "generationConfig": {
                     "temperature": 0.8,
                     "maxOutputTokens": 3000,
+                    "responseMimeType": "application/json",
+                    "thinkingConfig": {"thinkingBudget": 0},
                 },
             }
             resp = httpx.post(
@@ -426,42 +545,46 @@ def _call_gemini(prompt: str, count: int) -> list[str]:
     return questions or []  # return whatever we got
 
 
-def _call_openai(prompt: str, count: int) -> list[str]:
-    """Call OpenAI with 1 retry on parse failure."""
-    if not openai_client:
+def _call_deepseek(prompt: str, count: int) -> list[str]:
+    """Call DeepSeek V3 as fallback (OpenAI-compatible API, ~10x cheaper than GPT-4o)."""
+    if not deepseek_client:
         return []
 
+    questions: list[str] = []
     for attempt in range(2):
         try:
-            print(f"[QuestionEngine] OpenAI gpt-4o-mini (attempt {attempt + 1})...")
-            resp = openai_client.chat.completions.create(
-                model="gpt-4o-mini",
+            print(f"[QuestionEngine] DeepSeek deepseek-chat (attempt {attempt + 1})...")
+            resp = deepseek_client.chat.completions.create(
+                model="deepseek-chat",
                 messages=[{"role": "user", "content": prompt}],
                 response_format={"type": "json_object"},
                 temperature=0.8,
                 max_tokens=3000,
             )
             raw_text = resp.choices[0].message.content
-            questions = _parse_questions_json(raw_text)
+            questions = _parse_questions_json(raw_text) or []
             if questions and len(questions) >= count:
-                print(f"[QuestionEngine] OpenAI returned {len(questions)} questions")
+                print(f"[QuestionEngine] DeepSeek returned {len(questions)} questions")
                 return questions[:count]
             elif questions:
-                print(f"[QuestionEngine] OpenAI returned {len(questions)}/{count}, retrying...")
+                print(f"[QuestionEngine] DeepSeek returned {len(questions)}/{count}, retrying...")
             else:
-                print(f"[QuestionEngine] OpenAI JSON parse failed, retrying...")
+                print(f"[QuestionEngine] DeepSeek JSON parse failed, retrying...")
 
         except Exception as e:
-            print(f"[QuestionEngine] OpenAI error: {e}")
+            print(f"[QuestionEngine] DeepSeek error: {e}")
             return []
 
-    return questions or []
+    return questions
 
 
 # ═════════════════════════════════════════════════════════════════════════════════
 # 6. MAIN ENGINE
 # ═════════════════════════════════════════════════════════════════════════════════
 class QuestionEngine:
+    def __init__(self):
+        self._recent_questions: dict[str, list[str]] = {}  # user_id -> past questions
+
     def generate(
         self,
         company: str,
@@ -477,6 +600,8 @@ class QuestionEngine:
         experience_years: int = 0,
         education: str = "",
         github_url: str = "",
+        # Deduplication
+        user_id: str = "",
     ) -> list[str]:
         """
         Generate interview questions by combining all available candidate data
@@ -500,19 +625,36 @@ class QuestionEngine:
             web_context=web_context, technologies=technologies, domain=domain,
         )
 
+        # Step 3b: Add deduplication block if user has prior questions
+        past = self._recent_questions.get(user_id, []) if user_id else []
+        if past:
+            dedup_block = "\n\nPREVIOUSLY ASKED IN THIS USER'S PRIOR SESSIONS (DO NOT REPEAT OR REPHRASE):\n"
+            dedup_block += "\n".join(f"- {q}" for q in past[-20:])
+            prompt += dedup_block
+
         # Step 4: Gemini (primary)
         questions = _call_gemini(prompt, count)
         if len(questions) >= count:
+            # Store for dedup
+            if user_id:
+                self._recent_questions.setdefault(user_id, []).extend(questions)
+                self._recent_questions[user_id] = self._recent_questions[user_id][-50:]
             return questions[:count]
 
-        # Step 5: OpenAI (fallback)
-        questions = _call_openai(prompt, count)
+        # Step 5: DeepSeek (fallback)
+        questions = _call_deepseek(prompt, count)
         if len(questions) >= count:
+            if user_id:
+                self._recent_questions.setdefault(user_id, []).extend(questions)
+                self._recent_questions[user_id] = self._recent_questions[user_id][-50:]
             return questions[:count]
 
         # Step 6: If both LLMs fail, return partial results or an error message
         if questions:
             print(f"[QuestionEngine] Returning {len(questions)} partial questions")
+            if user_id:
+                self._recent_questions.setdefault(user_id, []).extend(questions)
+                self._recent_questions[user_id] = self._recent_questions[user_id][-50:]
             return questions
 
         print("[QuestionEngine] All LLMs failed — returning error placeholder")

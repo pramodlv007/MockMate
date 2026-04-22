@@ -30,17 +30,18 @@ class QuestionRequest(BaseModel):
     experience_years: Optional[int] = 0
     education: str = ""
     github_url: str = ""
+    user_id: str = ""               # for cross-session question deduplication
 
 
 @app.get("/health")
 def health():
-    from .engine import gemini_model, openai_client, TAVILY_API_KEY
+    from .engine import gemini_model, deepseek_client, TAVILY_API_KEY
     return {
         "status": "ok",
         "service": "question",
         "version": "3.0.0",
         "gemini": gemini_model is not None,
-        "openai": openai_client is not None,
+        "deepseek": deepseek_client is not None,
         "tavily": bool(TAVILY_API_KEY),
     }
 
@@ -69,5 +70,6 @@ async def generate(request: Request, req: QuestionRequest):
         experience_years=req.experience_years or 0,
         education=req.education,
         github_url=req.github_url,
+        user_id=req.user_id,
     )
     return {"questions": questions, "count": len(questions)}

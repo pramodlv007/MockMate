@@ -2,7 +2,7 @@
 MockMate Profile Service — Port 8002
 Resume handling (text extraction), GitHub analysis, skills extraction.
 """
-from fastapi import FastAPI, UploadFile, File, Header, HTTPException, Request
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Optional, List
@@ -16,6 +16,8 @@ app = FastAPI(title="MockMate Profile Service", version="2.0.0")
 
 GITHUB_TOKEN     = os.getenv("GITHUB_TOKEN", "")
 AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://localhost:8001")
+
+from common.auth import get_current_user_id
 
 
 @app.exception_handler(Exception)
@@ -57,21 +59,14 @@ def _extract_text_from_docx(content: bytes) -> str:
 
 @app.post("/resume/upload")
 async def upload_resume(
+    request: Request,
     file: UploadFile = File(...),
-    x_user_id: str = Header(None),
+    user_id: str = Depends(get_current_user_id),
 ):
-    """
-    Upload a resume (PDF or DOCX), extract its text, and save to the user's profile.
-    The x-user-id header is injected by the API gateway from the JWT.
-    """
-    if not x_user_id:
-        raise HTTPException(401, "Not authenticated")
-
     content = await file.read()
     filename = file.filename or "resume"
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "pdf"
 
-    # Extract text based on file type
     if ext == "pdf":
         resume_text = _extract_text_from_pdf(content)
     elif ext in ("docx", "doc"):
@@ -82,19 +77,20 @@ async def upload_resume(
         raise HTTPException(400, f"Unsupported file type: .{ext}. Please upload PDF, DOCX, or TXT.")
 
     if not resume_text or len(resume_text.strip()) < 50:
-        raise HTTPException(422, "Could not extract meaningful text from the resume. Please try a different file.")
+        raise HTTPException(422, "Could not extract meaningful text. Please try a different file.")
 
-    print(f"[Profile] Extracted {len(resume_text)} chars from {filename} for user {x_user_id}")
+    print(f"[Profile] Extracted {len(resume_text)} chars from {filename} for user {user_id}")
 
-    # Save extracted text to user profile via auth service
+    # Forward the original Bearer token so auth service can validate it
+    auth_header = request.headers.get("Authorization", "")
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.put(
             f"{AUTH_SERVICE_URL}/users/me/profile",
             json={"resume_text": resume_text},
-            headers={"x-user-id": x_user_id},
+            headers={"Authorization": auth_header},
         )
         if resp.status_code not in (200, 201):
-            print(f"[Profile] Failed to save resume_text: {resp.status_code} {resp.text[:200]}")
+            print(f"[Profile] Failed to save resume: {resp.status_code} {resp.text[:200]}")
             raise HTTPException(500, "Failed to save resume to profile.")
 
     return {

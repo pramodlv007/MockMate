@@ -17,7 +17,8 @@ python-jose[cryptography]
 psycopg2-binary
 
 # AI Integration
-openai
+google-generativeai        # Gemini 2.5 Flash — primary LLM + vision + transcription (free)
+openai                     # Used for DeepSeek fallback via OpenAI-compatible SDK
 tavily-python
 
 # Utilities
@@ -29,3 +30,10 @@ slowapi
 # Resume parsing
 pdfplumber
 python-docx
+
+# Video frame extraction (fallback only — Gemini native video is primary)
+moviepy
+Pillow
+
+# AWS SDK
+boto3
