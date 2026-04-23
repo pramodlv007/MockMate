@@ -7,9 +7,11 @@ from jose import JWTError, jwt
 from dotenv import dotenv_values
 from pathlib import Path
 
+# Priority: runtime env vars (Docker --env-file, Railway, etc.) > .env file baked into image
+# This prevents stale .env files in Docker images from overriding deployment secrets.
 _config = dotenv_values(Path(__file__).parent.parent / ".env")
-SECRET_KEY = _config.get("SECRET_KEY") or os.getenv("SECRET_KEY", "changeme-secret")
-ALGORITHM  = _config.get("ALGORITHM")  or os.getenv("ALGORITHM",  "HS256")
+SECRET_KEY = os.getenv("SECRET_KEY") or _config.get("SECRET_KEY") or "changeme-secret"
+ALGORITHM  = os.getenv("ALGORITHM")  or _config.get("ALGORITHM")  or "HS256"
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
 
