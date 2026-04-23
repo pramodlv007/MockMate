@@ -3,8 +3,8 @@
 #
 # Triggers on every push to `main`:
 #   Job 1: test    — install deps, build frontend, run backend tests
-#   Job 2: deploy  — build frontend, SSH into EC2, git pull, rebuild Docker,
-#                    sync frontend dist to nginx root
+#   Job 2: deploy  — rsync frontend dist + nginx config to EC2, git pull,
+#                    rebuild Docker, reload nginx
 #
 # Required GitHub Secrets (Settings → Secrets → Actions):
 #   EC2_HOST       — public IPv4 of your EC2 instance  (e.g. 3.19.239.13)
@@ -85,7 +85,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Re-build frontend so we have the dist folder in this job's workspace
+      # Re-build frontend in this job so dist/ is in the workspace for rsync
       - name: Set up Node 20
         uses: actions/setup-node@v4
         with:
@@ -114,75 +114,67 @@ jobs:
             frontend/dist/ \
             ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/${{ secrets.EC2_USER }}/MockMate/frontend/dist/
 
+      # ── Sync nginx config (avoids YAML heredoc-in-heredoc issues) ─────────
+      - name: Sync nginx config to EC2
+        run: |
+          scp -i ~/.ssh/ec2.pem -o StrictHostKeyChecking=no \
+            nginx/mockmate.conf \
+            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/tmp/mockmate.conf
+
       # ── Pull latest code & rebuild Docker on EC2 ──────────────────────────
       - name: Deploy backend on EC2
         run: |
           ssh -i ~/.ssh/ec2.pem \
               -o StrictHostKeyChecking=no \
-              ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'ENDSSH'
-            set -e
-            cd ~/MockMate
+              -o ServerAliveInterval=30 \
+              ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} bash -s << 'ENDSSH'
+          set -e
+          cd ~/MockMate
 
-            echo "==> Pulling latest code..."
-            git fetch origin main
-            git checkout main
-            git pull origin main
+          echo "==> Pulling latest code..."
+          git fetch origin main
+          git checkout main
+          git reset --hard origin/main
 
-            echo "==> Writing nginx config..."
-            sudo tee /etc/nginx/conf.d/mockmate.conf > /dev/null << 'NGINX'
-server {
-    listen 80;
-    server_name _;
-    root /home/ec2-user/MockMate/frontend/dist;
-    index index.html;
+          echo "==> Installing nginx config..."
+          sudo cp /tmp/mockmate.conf /etc/nginx/conf.d/mockmate.conf
+          sudo nginx -t
 
-    # Proxy API calls that have a sub-path after the prefix
-    location ~ ^/(auth|users|interviews|profile|questions|evaluation)/.+ {
-        proxy_pass http://localhost:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        client_max_body_size 500M;
-        proxy_read_timeout 300s;
-    }
+          echo "==> Rebuilding Docker image..."
+          docker build -f backend/Dockerfile.consolidated backend/ -t mockmate
 
-    # Health check endpoint
-    location = /health {
-        proxy_pass http://localhost:8000;
-    }
+          echo "==> Restarting container..."
+          docker stop mockmate 2>/dev/null || true
+          docker rm   mockmate 2>/dev/null || true
+          docker run -d \
+            --name mockmate \
+            --env-file backend/.env \
+            -p 8000:8000 \
+            --restart unless-stopped \
+            mockmate
 
-    # Everything else -> React SPA
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-}
-NGINX
+          echo "==> Waiting for health check..."
+          for i in $(seq 1 15); do
+            STATUS=$(curl -sf http://localhost:8000/health 2>/dev/null \
+              | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null \
+              || echo "")
+            if [ "$STATUS" = "ok" ]; then
+              echo "Backend is healthy!"
+              break
+            fi
+            echo "  Attempt $i/15 — retrying in 5s..."
+            sleep 5
+          done
 
-            echo "==> Rebuilding Docker image..."
-            docker build -f Dockerfile.consolidated backend/ -t mockmate
+          if [ "$STATUS" != "ok" ]; then
+            echo "ERROR: backend never became healthy"
+            docker logs mockmate --tail 30
+            exit 1
+          fi
 
-            echo "==> Restarting container..."
-            docker stop mockmate 2>/dev/null || true
-            docker rm   mockmate 2>/dev/null || true
-            docker run -d \
-              --name mockmate \
-              --env-file .env \
-              -p 8000:8000 \
-              --restart unless-stopped \
-              mockmate
-
-            echo "==> Waiting for health check..."
-            for i in $(seq 1 15); do
-              STATUS=$(curl -sf http://localhost:8000/health | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null || echo "")
-              if [ "$STATUS" = "ok" ]; then
-                echo "Backend is healthy!"
-                break
-              fi
-              echo "  Attempt $i/15 — retrying in 5s..."
-              sleep 5
-            done
-
-            echo "==> Reloading nginx..."
-            sudo nginx -t && sudo systemctl reload nginx
+          echo "==> Reloading nginx..."
+          sudo systemctl reload nginx
+          echo "==> Deployment complete!"
           ENDSSH
 
       # ── Smoke test ────────────────────────────────────────────────────────
@@ -197,6 +189,10 @@ NGINX
           echo "Frontend HTTP $HTTP_CODE"
           [ "$HTTP_CODE" = "200" ] || exit 1
 
+          echo "Testing warmup..."
+          curl -sf http://${{ secrets.EC2_HOST }}/warmup \
+            | python3 -c "import sys,json; d=json.load(sys.stdin); print('Warmup:', d.get('status'))"
+
       - name: Summary
         if: always()
         run: |
@@ -206,5 +202,4 @@ NGINX
           echo "|--------|-----|" >> $GITHUB_STEP_SUMMARY
           echo "| App | http://${{ secrets.EC2_HOST }} |" >> $GITHUB_STEP_SUMMARY
           echo "| API Health | http://${{ secrets.EC2_HOST }}/health |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
