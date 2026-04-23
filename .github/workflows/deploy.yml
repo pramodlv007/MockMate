@@ -148,7 +148,7 @@ jobs:
           docker rm   mockmate 2>/dev/null || true
           docker run -d \
             --name mockmate \
-            --env-file backend/.env \
+            --env-file .env \
             -p 8000:8000 \
             --restart unless-stopped \
             mockmate
