@@ -10,38 +10,40 @@
 [![React](https://img.shields.io/badge/React-18+-61DAFB?style=for-the-badge&logo=react)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5+-3178C6?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-4169E1?style=for-the-badge&logo=postgresql)](https://postgresql.org)
-[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker)](https://docker.com)
-[![Gemini](https://img.shields.io/badge/Google-Gemini_1.5-4285F4?style=for-the-badge&logo=google)](https://deepmind.google/technologies/gemini)
+[![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker)](https://docker.com)
+[![Gemini](https://img.shields.io/badge/Gemini_2.5_Flash-4285F4?style=for-the-badge&logo=google)](https://deepmind.google/technologies/gemini)
 
 [![Deploy](https://github.com/pramodlv007/MockMate/actions/workflows/deploy.yml/badge.svg)](https://github.com/pramodlv007/MockMate/actions/workflows/deploy.yml)
-[![Vercel](https://img.shields.io/badge/Frontend-Vercel-000000?style=for-the-badge&logo=vercel)](https://vercel.com)
-[![Render](https://img.shields.io/badge/Backend-Render-46E3B7?style=for-the-badge&logo=render)](https://render.com)
-[![AWS Lambda](https://img.shields.io/badge/Showcase-AWS_Lambda-FF9900?style=for-the-badge&logo=awslambda)](https://aws.amazon.com/lambda)
+[![AWS EC2](https://img.shields.io/badge/Backend-AWS_EC2-FF9900?style=for-the-badge&logo=amazonec2)](https://aws.amazon.com/ec2)
+[![AWS S3](https://img.shields.io/badge/Storage-AWS_S3-FF9900?style=for-the-badge&logo=amazons3)](https://aws.amazon.com/s3)
+[![Supabase](https://img.shields.io/badge/Database-Supabase-3ECF8E?style=for-the-badge&logo=supabase)](https://supabase.com)
+
+**Live:** http://3.19.239.13
 
 </div>
 
 ---
 
-## 📌 What is MockMate?
+## What is MockMate?
 
 **MockMate** is a production-grade AI-powered mock interview platform that simulates real technical interviews for software engineers. Candidates can practice interviews for any company and role, record their video responses, and receive **instant, in-depth AI-generated feedback** — all without needing a human interviewer.
 
 MockMate bridges the gap between practice and performance. Whether you're preparing for a FAANG interview or your first engineering role, MockMate delivers:
 
-- 🤖 **Role-specific, AI-generated questions** tailored to your target company, job description, and skill set
-- 🎥 **Live video recording** directly in the browser — no external tools needed
-- 🧠 **Multi-agent GenAI evaluation** analyzing what you said, how you said it, and how you presented yourself
-- 📊 **Detailed scorecards** with per-question breakdowns, top mistakes, and a 7-day personalized training plan
-- 🔐 **Secure authentication** with JWT access tokens and HttpOnly refresh cookies
+- **Role-specific, AI-generated questions** tailored to your target company, job description, and resume
+- **Live video recording** directly in the browser — no external tools needed
+- **Multi-agent GenAI evaluation** analyzing what you said, how you said it, and how you presented yourself
+- **Detailed scorecards** with per-question breakdowns, top mistakes, and a 7-day personalized training plan
+- **Secure authentication** with JWT access tokens and refresh token rotation
 
 ---
 
-## 💡 How MockMate Helps You
+## How MockMate Helps You
 
 | Problem | MockMate Solution |
 |---|---|
 | No access to real interviewers | AI interviewer simulates any company's persona |
-| Generic prep resources | Questions generated from your actual skills + JD |
+| Generic prep resources | Questions generated from your actual resume + JD |
 | No feedback after practice | Full AI scorecard delivered post-interview |
 | Hard to identify weaknesses | Top-10 mistakes flagged with quotes and fixes |
 | No structured study plan | Personalized 7-day improvement plan generated |
@@ -50,206 +52,98 @@ MockMate bridges the gap between practice and performance. Whether you're prepar
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
-MockMate is built as a **microservices architecture** — six independent FastAPI services orchestrated behind a single API Gateway, with a React + TypeScript frontend.
+MockMate runs as a **consolidated FastAPI application** — all microservices mounted as sub-apps in a single process, deployed on AWS EC2 behind nginx.
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        React Frontend (Vite/TS)                  │
-│   Auth · Profile · Interview Room · Results · History            │
-└──────────────────────────────┬──────────────────────────────────┘
-                               │ HTTP (localhost:5173 → :8000)
-                               ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    API Gateway  :8000                            │
-│   JWT validation · CORS · Request routing · User-ID injection    │
-└──┬──────┬──────┬───────┬──────────┬────────────────────────────┘
-   │      │      │       │          │
-   ▼      ▼      ▼       ▼          ▼
- Auth  Profile Question Interview Evaluation
- :8001  :8002   :8003    :8004      :8005
-   │      │       │        │          │
-   ▼      ▼       ▼        ▼          ▼
- PostgreSQL  MongoDB   Gemini/   PostgreSQL  Gemini/OpenAI
- (users)     (profiles) OpenAI  (sessions)   (multi-agent)
-                                    │
-                               MinIO (videos)
+┌─────────────────────────────────────────────────────────────┐
+│                  React Frontend (Vite + TS)                  │
+│        Auth · Profile · Interview Room · Results             │
+└──────────────────────────┬──────────────────────────────────┘
+                           │ HTTP  (nginx :80)
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│               nginx  (EC2 port 80)                           │
+│   Static files → frontend/dist                               │
+│   /auth/* /users/* /interviews/* /profile/* → :8000          │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│         Consolidated FastAPI App  (Docker :8000)             │
+│                                                              │
+│  /auth/*        → Auth Service    (signup, login, refresh)   │
+│  /users/*       → Auth Service    (profile CRUD)             │
+│  /profile/*     → Profile Service (resume upload, GitHub)    │
+│  /questions/*   → Question Service (AI question generation)  │
+│  /interviews/*  → Interview Service (sessions, video upload) │
+│  /evaluation/*  → Evaluation Service (AI scoring pipeline)   │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+              ┌────────────┼────────────┐
+              ▼            ▼            ▼
+       Supabase DB      AWS S3       Gemini 2.5
+      (PostgreSQL)    (Videos)      Flash API
 ```
 
-### Microservices Breakdown
+### Service Breakdown
 
-| Service | Port | Responsibility |
-|---|---|---|
-| **API Gateway** | 8000 | Single entry point — validates JWT, injects `x-user-id`, proxies to downstream services |
-| **Auth Service** | 8001 | Signup/login, JWT access + HttpOnly refresh tokens, `/users/me` profile |
-| **Profile Service** | 8002 | Resume upload, GitHub integration, MongoDB-backed profile storage |
-| **Question Service** | 8003 | AI question generation engine (Gemini 1.5 Flash / GPT-4o) |
-| **Interview Service** | 8004 | Session lifecycle, video upload, per-question storage, evaluation trigger |
-| **Evaluation Service** | 8005 | Multi-agent AI pipeline — transcription, content analysis, vision, synthesis |
-
-### Infrastructure
-
-| Component | Role |
+| Mount Path | Responsibility |
 |---|---|
-| **PostgreSQL 15** | User accounts, interview sessions, questions, scores |
-| **MongoDB 6** | Unstructured resume data, GitHub analysis, AI logs |
-| **Redis 7** | Session caching, rate limiting |
-| **MinIO** | S3-compatible object storage for video/audio files |
-| **RabbitMQ** | Message broker for async task queuing |
+| `/auth/*` `/users/*` | Signup, login, JWT tokens, user profile |
+| `/profile/*` | Resume upload & text extraction, GitHub analysis |
+| `/questions/*` | AI question generation (Gemini 2.5 Flash + DeepSeek fallback) |
+| `/interviews/*` | Session lifecycle, video upload to S3, transcript storage |
+| `/evaluation/*` | 4-agent AI pipeline — transcription, content, vision, synthesis |
 
 ---
 
-## 🚀 Production Deployment
+## GenAI Pipeline
 
-MockMate is deployed across a **hybrid cloud stack** optimised for cost and reliability (~$8/month total):
-
-```mermaid
-graph TB
-    User(["👤 User<br/>Browser"])
-
-    subgraph CF["☁️ Cloudflare (Free)"]
-        CDN["CDN + DDoS Protection<br/>yourdomain.com"]
-    end
-
-    subgraph Vercel["▲ Vercel (Free)"]
-        FE["React Frontend<br/>Vite + TypeScript"]
-    end
-
-    subgraph Render["🎨 Render ($7/mo)"]
-        GW["API Gateway :8000"]
-        AUTH["Auth Service :8001"]
-        PROF["Profile Service :8002"]
-        QUEST["Question Service :8003"]
-        INTV["Interview Service :8004"]
-        EVAL["Evaluation Service :8005"]
-        GW --> AUTH & PROF & QUEST & INTV & EVAL
-    end
-
-    subgraph Databases["🗄️ Managed Databases (Free Tier)"]
-        PG[("Supabase PostgreSQL<br/>Auth + Sessions")]
-        MONGO[("MongoDB Atlas M0<br/>Profiles")]
-        REDIS[("Upstash Redis<br/>Caching")]
-        R2[("Cloudflare R2<br/>Video Files")]
-    end
-
-    subgraph AWS["☁️ AWS (Showcase Layer ~$0.24/mo)"]
-        SM["Secrets Manager<br/>API Keys"]
-        subgraph Lambda["Lambda (Graviton2 ARM)"]
-            LQ["question_generate<br/>10 req/min limit"]
-            LE["evaluation_trigger<br/>3 req/hour limit"]
-        end
-        CW["CloudWatch<br/>Structured Logs + Dashboard"]
-        LQ & LE --> SM
-        LQ & LE --> CW
-    end
-
-    subgraph CICD["🔄 CI/CD — GitHub Actions (Free)"]
-        GA["Push to main →<br/>Test → Build → Deploy"]
-    end
-
-    User --> CDN
-    CDN --> FE
-    CDN --> GW
-    AUTH --> PG
-    INTV --> PG
-    PROF --> MONGO
-    QUEST --> REDIS
-    INTV --> R2
-    GW -.->|"showcase routes"| LQ & LE
-    GA -.->|"sam deploy"| Lambda
-    GA -.->|"vercel deploy"| FE
-    GA -.->|"deploy hooks"| GW
-```
-
-### CI/CD Flow
+MockMate's evaluation engine is a **4-agent AI pipeline** powered by Gemini 2.5 Flash.
 
 ```
-git push → GitHub Actions
-              ├── 🧪 Run tests + build frontend
-              ├── ▲  Deploy frontend → Vercel (prod)
-              ├── 🎨 Trigger Render redeploys (all 6 services)
-              └── ☁️  sam deploy → AWS Lambda (question + evaluation)
-```
-
-### Cost Breakdown
-
-| Service | Plan | Cost |
-|---|---|---|
-| Vercel (frontend) | Hobby | Free |
-| Render (6 microservices) | Starter | $7/mo |
-| MongoDB Atlas (profiles) | M0 | Free |
-| Supabase (PostgreSQL) | Free | Free |
-| Upstash (Redis) | Free | Free |
-| Cloudflare R2 (files) | Free 10GB | Free |
-| Cloudflare (DNS + CDN) | Free | Free |
-| AWS Lambda (2 routes) | Free tier | ~$0 |
-| AWS Secrets Manager | 1 secret | ~$0.24/mo |
-| Domain (.com) | Annual | ~$1/mo |
-| **Total** | | **~$8/month** |
-
----
-
-## 🤖 GenAI Pipeline
-
-MockMate's evaluation engine is a **4-agent AI pipeline** that runs asynchronously after the interview recording is uploaded.
-
-```
-Video Upload
+Video Upload (stored on AWS S3)
      │
      ▼
-┌──────────────────────────────────────────────────────┐
-│  Agent 1 · SCRIBE (Transcription)                    │
-│  OpenAI Whisper-1 (primary) → Gemini 1.5 (fallback)  │
-│  Output: Full verbatim transcript                     │
-└─────────────────────────┬────────────────────────────┘
-                          │
-          ┌───────────────┴───────────────┐
-          ▼                               ▼
-┌─────────────────────┐      ┌─────────────────────────┐
-│  Agent 2 · OBSERVER │      │  Speech Metrics Engine  │
-│  (Vision Analysis)  │      │  (No AI — Pure Math)    │
-│  Gemini Vision /    │      │  WPM · Filler words ·   │
-│  GPT-4o Vision      │      │  Pace assessment        │
-│  3 frames sampled   │      └─────────────────────────┘
-│  Eye contact %      │                  │
-│  Posture %          │                  │
-│  Engagement %       │                  │
-└──────────┬──────────┘                  │
-           │                             │
-           └────────────┬────────────────┘
-                        ▼
-┌──────────────────────────────────────────────────────┐
-│  Agent 3 · EVALUATOR + SYNTHESIZER                    │
-│  Gemini 1.5 Flash (primary) → GPT-4o Mini (fallback)  │
-│                                                       │
-│  Inputs:  Transcript + JD + Questions + Speech Metrics │
-│           + Vision Scores + Company Persona           │
-│                                                       │
-│  Outputs:                                             │
-│  ├─ Overall score (0-100)                             │
-│  ├─ Hire recommendation (Strong Yes → Strong No)      │
-│  ├─ Section scores (Technical, Communication, etc.)   │
-│  ├─ Per-question breakdown (score + feedback)          │
-│  ├─ Top-10 mistakes with quotes + suggestions         │
-│  ├─ Strengths & critical improvements                 │
-│  └─ 7-day personalized training plan                  │
-└──────────────────────────────────────────────────────┘
-                        │
-                        ▼
-           Interview Service DB updated
-           Frontend polls → Results page
+Agent 1 · SCRIBE  ── Gemini 2.5 Flash native video transcription
+     │                Output: per-question verbatim transcript
+     │
+     ├─────────────────────────────────────┐
+     ▼                                     ▼
+Agent 2 · OBSERVER                  Speech Metrics
+Gemini Vision — 3 frames sampled    WPM · filler words · pace
+Eye contact % · Posture %
+Engagement score
+     │                                     │
+     └──────────────┬──────────────────────┘
+                    ▼
+Agent 3 · EVALUATOR + SYNTHESIZER  ── Gemini 2.5 Flash
+Inputs:  Transcript + resume + JD + questions + vision + speech
+Outputs:
+  ├─ Overall score (0–100) + hire recommendation
+  ├─ Section scores (Technical, Communication, Problem-Solving)
+  ├─ Per-question breakdown with score + feedback
+  ├─ Top-10 mistakes with direct quotes + suggested fixes
+  ├─ Strengths & critical improvements
+  └─ Personalized 7-day training plan
 ```
+
+### Question Generation Intelligence
+
+- **Resume parsing** — extracts tech stack, projects, experience level
+- **Company patterns** — tailored question styles for Google, Amazon, Meta, Apple, Microsoft, Netflix, Stripe, OpenAI, Uber, Airbnb
+- **Cross-session deduplication** — never repeats questions for the same user
+- **JD alignment** — maps job description keywords to question themes
 
 ### Interviewer Personas & Strictness
 
-The question generation and evaluation can be configured before each session:
-
 | Persona | Style |
 |---|---|
-| 🤝 Friendly | Warm, supportive, encouraging |
-| ⚖️ Neutral | Balanced, professional, objective |
-| 💀 Tough | FAANG-level critical, rigorous |
+| Friendly | Warm, supportive, encouraging |
+| Neutral | Balanced, professional, objective |
+| Tough | FAANG-level critical, rigorous |
 
 | Strictness | Benchmark |
 |---|---|
@@ -259,59 +153,84 @@ The question generation and evaluation can be configured before each session:
 
 ---
 
-## 🛠️ Tech Stack
+## Infrastructure & Deployment
+
+MockMate is deployed on **AWS** with a CI/CD pipeline via GitHub Actions.
+
+```
+git push origin main
+        │
+        ▼
+GitHub Actions
+  ├── Test — Python tests + TypeScript build
+  ├── Build — Vite frontend with EC2 API URL
+  ├── Sync  — rsync frontend/dist → EC2 via SSH
+  ├── Deploy — SSH: git pull + docker build + restart
+  └── Smoke test — health check against EC2
+```
+
+### AWS Stack
+
+| Component | Service | Purpose |
+|---|---|---|
+| Compute | EC2 t2.micro | Runs Docker container (FastAPI + nginx) |
+| Storage | S3 (`mockmate-videos-pramod`) | Interview video files |
+| Database | Supabase PostgreSQL | Users, sessions, questions, scores |
+| Web server | nginx | Static file serving + API reverse proxy |
+| Container | Docker | Isolated, reproducible backend runtime |
+
+### Cost
+
+| Service | Cost |
+|---|---|
+| EC2 t2.micro | Free tier (12 months) |
+| S3 | Free tier (5 GB) |
+| Supabase | Free |
+| GitHub Actions | Free |
+| **Total** | **$0/month** (free tier) |
+
+---
+
+## Tech Stack
 
 ### Backend
 | Layer | Technology |
 |---|---|
-| Framework | FastAPI (async Python) |
+| Framework | FastAPI (async Python 3.11) |
 | Auth | `python-jose` (JWT), `passlib[bcrypt]` |
-| ORM | SQLAlchemy + psycopg2 (PostgreSQL) |
-| Async DB | Motor (MongoDB async driver) |
-| Caching | redis-py |
-| Storage | MinIO (S3-compatible) |
+| ORM | SQLAlchemy + psycopg2 |
 | HTTP Client | httpx (async) |
+| Video Storage | boto3 → AWS S3 |
+| Resume Parsing | pdfplumber, python-docx |
 | Rate Limiting | slowapi |
-| Video | moviepy, opencv-python |
 
 ### AI / GenAI
-| Purpose | Model / Library |
+| Purpose | Model |
 |---|---|
-| Question Generation | Gemini 1.5 Flash / GPT-4o |
-| Audio Transcription | OpenAI Whisper-1 / Gemini |
-| Content Evaluation | Gemini 1.5 Flash / GPT-4o Mini |
-| Vision Analysis | Gemini Vision / GPT-4o Vision |
-| Web Research | Tavily Python client |
+| Question Generation | Gemini 2.5 Flash (primary) · DeepSeek (fallback) |
+| Video Transcription | Gemini 2.5 Flash native video |
+| Content Evaluation | Gemini 2.5 Flash |
+| Vision Analysis | Gemini 2.5 Flash (frame sampling) |
 
 ### Frontend
 | Layer | Technology |
 |---|---|
 | Framework | React 18 + TypeScript |
-| Build Tool | Vite 7 |
+| Build Tool | Vite |
 | Styling | Tailwind CSS |
 | Video Recording | MediaRecorder API (native browser) |
+| Speech-to-Text | Web Speech API (per-question transcripts) |
 | State & Auth | React Context + JWT |
-| HTTP | Axios / Fetch |
-
-### DevOps & Infrastructure
-| Tool | Purpose |
-|---|---|
-| Docker + Docker Compose | Container orchestration |
-| PostgreSQL 15 | Relational data |
-| MongoDB 6 | Document storage |
-| Redis 7 | Cache & sessions |
-| MinIO | Object storage |
-| RabbitMQ | Message broker |
 
 ---
 
-## 🚀 Getting Started
+## Getting Started (Local)
 
 ### Prerequisites
-- Docker Desktop (running)
 - Python 3.11+
-- Node.js 18+
-- API Keys: Google Gemini and/or OpenAI
+- Node.js 20+
+- PostgreSQL (or a Supabase project)
+- Gemini API key (free at [aistudio.google.com](https://aistudio.google.com))
 
 ### 1. Clone & Configure
 
@@ -320,40 +239,27 @@ git clone https://github.com/pramodlv007/MockMate.git
 cd MockMate
 ```
 
-Copy the environment template and fill in your API keys:
+Create `backend/.env`:
 
-```bash
-cp backend/.env.example backend/.env
-# Edit backend/.env with your keys
-```
-
-Key environment variables:
 ```env
-SECRET_KEY=your-jwt-secret
-GOOGLE_API_KEY=your-gemini-api-key
-OPENAI_API_KEY=your-openai-api-key
-DATABASE_URL=postgresql://mockmate:password@localhost:5432/mockmate_db
+DATABASE_URL=postgresql://user:password@host:5432/dbname
+SECRET_KEY=your-jwt-secret-key
+GEMINI_API_KEY=your-gemini-api-key
+QUESTION_SERVICE_URL=http://localhost:8000/questions
+INTERVIEW_SERVICE_URL=http://localhost:8000/interviews
+EVALUATION_SERVICE_URL=http://localhost:8000/evaluation
+AUTH_SERVICE_URL=http://localhost:8000
 ```
 
-### 2. Start Infrastructure (Docker)
+### 2. Start Backend
 
 ```bash
-docker compose -f docker-compose.dev.yml up -d
+cd backend
+pip install -r requirements.txt
+uvicorn app_consolidated:app --reload --port 8000
 ```
 
-This starts: PostgreSQL · MongoDB · Redis · MinIO · RabbitMQ
-
-### 3. Start Backend Microservices
-
-```bash
-pip install -r backend/requirements.txt
-.\start_services.ps1      # Windows
-# or manually: uvicorn services.gateway.main:app --port 8000 ...
-```
-
-Six terminal windows will open, one per service.
-
-### 4. Start Frontend
+### 3. Start Frontend
 
 ```bash
 cd frontend
@@ -361,82 +267,60 @@ npm install
 npm run dev
 ```
 
-### 5. Open the App
+### 4. Open the App
 
 | Service | URL |
 |---|---|
-| 🌐 Frontend | http://localhost:5173 |
-| 🔀 API Gateway | http://localhost:8000/docs |
-| 🔐 Auth Service | http://localhost:8001/docs |
-| 👤 Profile Service | http://localhost:8002/docs |
-| ❓ Question Service | http://localhost:8003/docs |
-| 🎥 Interview Service | http://localhost:8004/docs |
-| 📊 Evaluation Service | http://localhost:8005/docs |
+| Frontend | http://localhost:5173 |
+| API Docs | http://localhost:8000/docs |
 
 ---
 
-## 📂 Project Structure
+## Project Structure
 
 ```
 MockMate/
-├── .github/
-│   ├── workflows/
-│   │   └── deploy.yml           # CI/CD: test → Vercel → Render → AWS Lambda
-│   └── SECRETS_SETUP.md         # Guide for adding GitHub secrets
-├── aws/                         # AWS Lambda showcase layer
-│   ├── lambda/
-│   │   ├── question_generate/   # Lambda: POST /questions/generate
-│   │   │   ├── handler.py       # FastAPI + Mangum + Secrets Manager
-│   │   │   └── requirements.txt
-│   │   └── evaluation_trigger/  # Lambda: POST /evaluate/trigger
-│   │       ├── handler.py       # Async pipeline + CloudWatch logging
-│   │       └── requirements.txt
-│   ├── template.yaml            # AWS SAM infrastructure template
-│   ├── samconfig.toml           # SAM deploy defaults
-│   └── README.md                # AWS setup guide
+├── .github/workflows/deploy.yml   # CI/CD: test → build → EC2 deploy
 ├── backend/
-│   ├── common/                  # Shared DB config, utilities
+│   ├── app_consolidated.py        # Single FastAPI app — all services mounted
+│   ├── common/
+│   │   ├── auth.py                # Shared JWT validation dependency
+│   │   └── database.py            # SQLAlchemy engine + session
 │   ├── services/
-│   │   ├── gateway/             # API Gateway (port 8000) — JWT + proxy
-│   │   ├── auth/                # Auth Service (port 8001)
-│   │   ├── profile/             # Profile Service (port 8002)
-│   │   ├── question/            # Question Service (port 8003) — rate limited
-│   │   ├── interview/           # Interview Service (port 8004)
-│   │   └── evaluation/          # Evaluation Service (port 8005) — rate limited
-│   ├── Dockerfile.service       # Multi-service Dockerfile
-│   ├── requirements.txt
-│   ├── .env                     # Real keys — never committed
-│   └── .env.example             # Template with cloud URLs
+│   │   ├── auth/                  # Signup, login, token refresh, user profile
+│   │   ├── profile/               # Resume upload, GitHub analysis
+│   │   ├── question/              # AI question generation engine
+│   │   │   ├── engine.py          # Gemini + DeepSeek, resume intelligence
+│   │   │   └── company_patterns.py # Per-company question styles
+│   │   ├── interview/             # Sessions, S3 video upload, transcripts
+│   │   └── evaluation/            # 4-agent AI evaluation pipeline
+│   ├── Dockerfile.consolidated    # Single-container build
+│   └── requirements.txt
 ├── frontend/
 │   ├── src/
-│   │   ├── pages/               # Home, Login, Signup, InterviewRoom, Results, History, Profile
-│   │   ├── components/          # Reusable UI components
-│   │   ├── context/             # Auth context
-│   │   └── api.ts               # API client layer
-│   ├── vercel.json              # Vercel SPA routing + cache config
+│   │   ├── pages/                 # Home, Login, Signup, InterviewRoom, Results, Profile
+│   │   ├── components/            # Reusable UI components
+│   │   └── context/               # Auth context
 │   └── package.json
-├── render.yaml                  # Render IaC — all 6 services declared
-├── docker-compose.yml           # Full local production stack
-├── docker-compose.dev.yml       # Infrastructure only (dev)
-└── start_services.ps1           # Dev startup script (Windows)
+└── Dockerfile.consolidated        # Root-level copy for EC2 deploy
 ```
 
 ---
 
-## 🔐 Authentication Flow
+## Authentication Flow
 
 ```
-Signup/Login → Access Token (30 min, JSON body)
-                + Refresh Token (7 days, HttpOnly cookie)
-                      │
-              Every 30 min → Silent /auth/refresh
-                      │
-              Logout → Cookie cleared
+Signup/Login → Access Token (30 min, Bearer)
+             + Refresh Token (7 days, rotation)
+                   │
+           Every 25 min → Silent /auth/refresh
+                   │
+           Logout  → Tokens cleared
 ```
 
 ---
 
-## 📄 License
+## License
 
 MIT License — see [LICENSE](LICENSE) for details.
 
@@ -444,7 +328,7 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 <div align="center">
 
-Built with ❤️ by [Pramod](https://github.com/pramodlv007)
+Built by [Pramod](https://github.com/pramodlv007)
 
 **MockMate — Because every interview deserves a rehearsal.**
 
