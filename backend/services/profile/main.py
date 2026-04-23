@@ -34,15 +34,44 @@ def health():
 
 # ─── Resume Upload + Text Extraction ─────────────────────────────────────────
 def _extract_text_from_pdf(content: bytes) -> str:
-    """Extract text from PDF bytes using pdfplumber."""
+    """Extract text from PDF bytes. Tries pdfplumber first, pypdfium2 as fallback."""
+    text = ""
+
+    # Strategy 1: pdfplumber (best for standard text PDFs)
     try:
         import pdfplumber
         with pdfplumber.open(io.BytesIO(content)) as pdf:
-            pages = [page.extract_text() or "" for page in pdf.pages]
-        return "\n".join(pages).strip()
+            pages_text = []
+            for i, page in enumerate(pdf.pages):
+                page_text = page.extract_text() or ""
+                print(f"[Profile] PDF page {i+1}: {len(page_text)} chars extracted")
+                pages_text.append(page_text)
+        text = "\n".join(pages_text).strip()
     except Exception as e:
-        print(f"[Profile] PDF extraction error: {e}")
-        return ""
+        print(f"[Profile] pdfplumber failed: {e}")
+
+    if len(text) >= 50:
+        return text
+
+    # Strategy 2: pypdfium2 fallback (handles some PDFs pdfplumber misses)
+    try:
+        import pypdfium2 as pdfium
+        doc = pdfium.PdfDocument(io.BytesIO(content))
+        pages_text = []
+        for i in range(len(doc)):
+            page = doc[i]
+            textpage = page.get_textpage()
+            page_text = textpage.get_text_range() or ""
+            print(f"[Profile] pypdfium2 page {i+1}: {len(page_text)} chars")
+            pages_text.append(page_text)
+        fallback_text = "\n".join(pages_text).strip()
+        if len(fallback_text) > len(text):
+            text = fallback_text
+    except Exception as e:
+        print(f"[Profile] pypdfium2 failed: {e}")
+
+    print(f"[Profile] Total PDF text extracted: {len(text)} chars")
+    return text
 
 
 def _extract_text_from_docx(content: bytes) -> str:
@@ -77,7 +106,23 @@ async def upload_resume(
         raise HTTPException(400, f"Unsupported file type: .{ext}. Please upload PDF, DOCX, or TXT.")
 
     if not resume_text or len(resume_text.strip()) < 50:
-        raise HTTPException(422, "Could not extract meaningful text. Please try a different file.")
+        char_count = len(resume_text.strip()) if resume_text else 0
+        ext_display = ext.upper()
+        if ext == "pdf" and char_count == 0:
+            detail = (
+                "Your PDF appears to be a scanned image or image-only PDF — "
+                "no text layer was found. Please export your resume as a text-based PDF "
+                "from Word/Google Docs, or upload a TXT file instead."
+            )
+        elif char_count < 50:
+            detail = (
+                f"Only {char_count} characters were extracted from your {ext_display} file "
+                "(minimum 50 required). Please ensure your resume has readable text content."
+            )
+        else:
+            detail = "Could not extract meaningful text. Please try a PDF, DOCX, or TXT file."
+        print(f"[Profile] Upload rejected: {detail}")
+        raise HTTPException(422, detail)
 
     print(f"[Profile] Extracted {len(resume_text)} chars from {filename} for user {user_id}")
 

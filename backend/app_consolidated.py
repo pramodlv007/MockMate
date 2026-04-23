@@ -45,6 +45,11 @@ def health():
         "services": ["auth", "profile", "question", "interview", "evaluation"],
     }
 
+@app.get("/warmup")
+def warmup():
+    """Frontend calls this on boot to pre-warm the backend."""
+    return {"status": "warm", "service": "mockmate-consolidated"}
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     tb = traceback.format_exc()
