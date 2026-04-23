@@ -24,31 +24,47 @@
 
 ---
 
-## What is MockMate?
+## The Problem
 
-**MockMate** is a production-grade AI-powered mock interview platform that simulates real technical interviews for software engineers. Candidates can practice interviews for any company and role, record their video responses, and receive **instant, in-depth AI-generated feedback** — all without needing a human interviewer.
+Most engineers fail technical interviews — not because they lack the skills, but because they've never practiced in a realistic setting. Mock interviews with peers are hard to schedule. Platforms like LeetCode train you to solve problems but not to communicate your thinking. You finish a practice session with no idea whether your answers, delivery, or body language were good enough.
 
-MockMate bridges the gap between practice and performance. Whether you're preparing for a FAANG interview or your first engineering role, MockMate delivers:
+**MockMate was built to fix that.**
 
-- **Role-specific, AI-generated questions** tailored to your target company, job description, and resume
-- **Live video recording** directly in the browser — no external tools needed
-- **Multi-agent GenAI evaluation** analyzing what you said, how you said it, and how you presented yourself
-- **Detailed scorecards** with per-question breakdowns, top mistakes, and a 7-day personalized training plan
-- **Secure authentication** with JWT access tokens and refresh token rotation
+The idea started from a simple question: *what if you could have an AI sit across from you, ask exactly the questions a real Google or Amazon interviewer would ask based on your resume and the job description, record your response, and then give you brutally honest feedback on everything — content, communication, confidence, pace, and eye contact?*
+
+That's MockMate.
+
+---
+
+## What MockMate Does
+
+MockMate is a full end-to-end interview simulation platform. You pick a company, paste a job description, and MockMate generates a tailored set of questions from your actual resume. You answer on camera in the browser. When you're done, a multi-agent AI pipeline evaluates the recording and returns a detailed scorecard within minutes.
+
+**For the candidate:**
+- Realistic interview experience — same pressure, same format, zero scheduling overhead
+- Questions that reflect your actual experience, not generic bank questions
+- Feedback that tells you *exactly* what you said wrong, with direct quotes and suggested rewrites
+- A 7-day personalized study plan based on where you struggled
+
+**For engineers studying AI/ML roles:**
+- Resume-aware questions that probe your specific projects and tech stack
+- Company-specific question styles (Google system design, Amazon leadership principles, Meta product sense, etc.)
+- Strictness levels from beginner-friendly to FAANG bar
 
 ---
 
 ## How MockMate Helps You
 
-| Problem | MockMate Solution |
+| Pain Point | MockMate Solution |
 |---|---|
-| No access to real interviewers | AI interviewer simulates any company's persona |
-| Generic prep resources | Questions generated from your actual resume + JD |
-| No feedback after practice | Full AI scorecard delivered post-interview |
-| Hard to identify weaknesses | Top-10 mistakes flagged with quotes and fixes |
-| No structured study plan | Personalized 7-day improvement plan generated |
-| Body language blind spots | Vision AI analyzes eye contact, posture, engagement |
-| Filler words go unnoticed | Speech metrics: WPM, filler count, pace assessment |
+| No realistic practice environment | Full video interview simulation in the browser |
+| Generic prep that ignores your background | Questions generated from your resume + job description |
+| Zero feedback after practice sessions | AI scorecard: content, communication, delivery, body language |
+| Can't identify your own weak spots | Top-10 mistakes with direct quotes and specific fixes |
+| No structure to your preparation | Personalized 7-day training plan based on your gaps |
+| Unaware of filler words and pace issues | Speech metrics: WPM, filler count, pacing assessment |
+| Body language blind spots | Vision AI scores eye contact, posture, and engagement |
+| Questions repeat across sessions | Cross-session deduplication — never the same question twice |
 
 ---
 
