@@ -18,12 +18,19 @@ function drainRefreshQueue(token: string) { refreshQueue.forEach(cb => cb(token)
 const api = axios.create({
     baseURL: API_URL,
     withCredentials: true,          // sends HttpOnly refresh cookie on every req
-    headers: { 'Content-Type': 'application/json' },
+    // NOTE: Do NOT set a default Content-Type here.
+    // For JSON bodies, axios sets it automatically.
+    // For FormData (file uploads), axios MUST set multipart/form-data with the boundary itself.
+    // A hardcoded default would corrupt the boundary on retried multipart requests.
 });
 
-// Attach access token to every outgoing request
+// Attach access token + set correct Content-Type on every outgoing request
 api.interceptors.request.use(config => {
     if (accessToken) config.headers.Authorization = `Bearer ${accessToken}`;
+    // Only set JSON content-type if the body is not FormData (file upload)
+    if (config.data && !(config.data instanceof FormData)) {
+        config.headers['Content-Type'] = 'application/json';
+    }
     return config;
 });
 
@@ -243,9 +250,8 @@ export const endpoints = {
     uploadVideo: (id: string | number, file: Blob) => {
         const form = new FormData();
         form.append('file', file, 'recording.webm');
-        return api.post(`/interviews/${id}/upload`, form, {
-            headers: { 'Content-Type': 'multipart/form-data' },
-        });
+        // Don't set Content-Type — axios sets multipart/form-data + boundary automatically for FormData
+        return api.post(`/interviews/${id}/upload`, form);
     },
 
     // Profile service
