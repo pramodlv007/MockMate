@@ -76,13 +76,17 @@ export const Profile = () => {
             formData.append('file', file);
             // Don't set Content-Type — axios sets it automatically with the multipart boundary
             const response = await api.post(`${API_URL}/profile/resume/upload`, formData);
+            // Safely extract data — response.data shape: { status, filename, characters_extracted, preview }
+            const data = response?.data || {};
             setResumeUploaded(true);
             setExistingResume(true);
-            setResumePreview(response.data.preview || '');
+            setResumePreview(typeof data.preview === 'string' ? data.preview : '');
         } catch (err: any) {
-            const msg = err?.response?.data?.detail || err?.message || 'Upload failed';
+            const detail = err?.response?.data?.detail;
+            const msg = typeof detail === 'string' ? detail : err?.message || 'Upload failed. Please try again.';
             setResumeError(msg);
             setResumeFile(null);
+            setResumeUploaded(false);
         } finally {
             setResumeUploading(false);
         }
@@ -95,7 +99,14 @@ export const Profile = () => {
         if (file) handleResumeUpload(file);
     };
 
-    if (!authUser) return <div className="text-center pt-20">Loading...</div>;
+    if (!authUser) return (
+        <div className="flex items-center justify-center pt-32">
+            <div className="flex flex-col items-center gap-4 text-slate-400">
+                <Loader size={36} className="animate-spin text-indigo-400" />
+                <p className="text-sm">Loading your profile...</p>
+            </div>
+        </div>
+    );
 
     return (
         <div className="max-w-3xl mx-auto space-y-8 animate-fade-in">
