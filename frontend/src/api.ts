@@ -242,7 +242,7 @@ export const endpoints = {
 
     // Interviews
     createInterview: (data: CreateInterviewPayload) =>
-        api.post<InterviewSession>('/interviews', data),
+        api.post<InterviewSession>('/interviews/', data),
     getInterview: (id: string | number) =>
         api.get<InterviewSession>(`/interviews/${id}`),
     getUserInterviews: () =>
