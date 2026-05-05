@@ -136,8 +136,15 @@ jobs:
           git checkout main
           git reset --hard origin/main
 
-          echo "==> Installing nginx config..."
-          sudo cp /tmp/mockmate.conf /etc/nginx/conf.d/mockmate.conf
+          echo "==> Checking nginx config..."
+          # Only overwrite nginx config if SSL is NOT yet configured
+          # (certbot modifies the config — we don't want to blow that away)
+          if [ ! -f /etc/letsencrypt/live/*/fullchain.pem ]; then
+            echo "    No SSL cert found — installing base nginx config"
+            sudo cp /tmp/mockmate.conf /etc/nginx/conf.d/mockmate.conf
+          else
+            echo "    SSL cert exists — preserving certbot-managed nginx config"
+          fi
           sudo nginx -t
 
           echo "==> Rebuilding Docker image..."
