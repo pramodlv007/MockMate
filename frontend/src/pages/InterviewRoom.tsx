@@ -132,6 +132,18 @@ export const InterviewRoom = () => {
 
     useEffect(() => {
         const initCamera = async () => {
+            // getUserMedia requires a secure context (HTTPS or localhost)
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                const isHTTP = window.location.protocol === 'http:' && window.location.hostname !== 'localhost';
+                setCameraError(
+                    isHTTP
+                        ? 'Camera requires HTTPS. The interview will proceed without video recording. Your answers are still captured.'
+                        : 'Camera API not available in this browser. The interview will proceed without video.'
+                );
+                // Allow interview to proceed without camera
+                setCameraReady(true);
+                return;
+            }
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
@@ -144,6 +156,8 @@ export const InterviewRoom = () => {
                 if (err.name === 'NotAllowedError') setCameraError('Camera access denied. Please enable permissions.');
                 else if (err.name === 'NotFoundError') setCameraError('No camera found. Please connect a webcam.');
                 else setCameraError(`Camera error: ${err.message}`);
+                // Still allow interview to proceed without camera
+                setCameraReady(true);
             }
         };
         initCamera();
@@ -174,14 +188,16 @@ export const InterviewRoom = () => {
     };
 
     const startInterview = () => {
-        if (!streamRef.current) { alert('Camera not ready.'); return; }
         chunksRef.current = [];
-        const mimeTypes = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4'];
-        const mimeType = mimeTypes.find(m => MediaRecorder.isTypeSupported(m)) ?? 'video/webm';
-        const recorder = new MediaRecorder(streamRef.current, { mimeType });
-        recorder.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-        recorder.start(1000);
-        mediaRecorderRef.current = recorder;
+        // Only set up MediaRecorder if we have a camera stream
+        if (streamRef.current) {
+            const mimeTypes = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4'];
+            const mimeType = mimeTypes.find(m => MediaRecorder.isTypeSupported(m)) ?? 'video/webm';
+            const recorder = new MediaRecorder(streamRef.current, { mimeType });
+            recorder.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+            recorder.start(1000);
+            mediaRecorderRef.current = recorder;
+        }
         setIsRecording(true);
         try { recognitionRef.current?.start(); } catch (_) {}
         setAiSpeaking(true);
@@ -189,11 +205,17 @@ export const InterviewRoom = () => {
     };
 
     const finishInterview = () => {
-        if (!mediaRecorderRef.current || !isRecording) return;
+        if (!isRecording) return;
         try { recognitionRef.current?.stop(); } catch (_) {}
-        mediaRecorderRef.current.stop();
-        setIsRecording(false);
-        mediaRecorderRef.current.onstop = uploadVideo;
+        if (mediaRecorderRef.current) {
+            mediaRecorderRef.current.stop();
+            setIsRecording(false);
+            mediaRecorderRef.current.onstop = uploadVideo;
+        } else {
+            // No recording (HTTP mode) — go straight to results
+            setIsRecording(false);
+            uploadVideo();
+        }
     };
 
     const uploadVideo = async () => {
@@ -321,13 +343,13 @@ export const InterviewRoom = () => {
                         {cameraError ? (
                             <div className="absolute inset-0 flex flex-col items-center justify-center gap-4"
                                 style={{ background: '#111' }}>
-                                <VideoOff size={56} className="text-red-400" />
-                                <p className="text-red-400 text-center max-w-xs">{cameraError}</p>
-                                <button onClick={() => window.location.reload()}
-                                    className="px-5 py-2 rounded-xl text-sm font-semibold text-white"
-                                    style={{ background: t.accent }}>
-                                    Retry Camera
-                                </button>
+                                <VideoOff size={56} style={{ color: t.accent, opacity: 0.6 }} />
+                                <p className="text-center max-w-sm text-sm leading-relaxed" style={{ color: t.subtext }}>{cameraError}</p>
+                                <div className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium"
+                                    style={{ background: `rgba(${t.accentRgb},0.1)`, border: `1px solid rgba(${t.accentRgb},0.2)`, color: t.accent }}>
+                                    <CheckCircle size={14} />
+                                    Interview mode: Text-based answers
+                                </div>
                             </div>
                         ) : (
                             <>
@@ -356,14 +378,14 @@ export const InterviewRoom = () => {
                         </div>
 
                         {/* Start overlay */}
-                        {!isRecording && !isUploading && !cameraError && (
+                        {!isRecording && !isUploading && (
                             <div className="absolute inset-0 flex flex-col items-center justify-center gap-6 z-10"
                                 style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}>
 
                                 {/* Theme label */}
                                 <div className="text-center mb-2">
                                     <div className="text-xs mb-3 font-medium tracking-widest uppercase"
-                                        style={{ color: t.subtext }}>Select theme above, then start</div>
+                                        style={{ color: t.subtext }}>{cameraError ? 'Camera unavailable — text mode' : 'Select theme above, then start'}</div>
                                     <div className="flex items-center gap-2 justify-center">
                                         <Sparkles size={18} style={{ color: t.accent }} />
                                         <span className="text-lg font-semibold" style={{ color: t.text }}>
@@ -376,7 +398,7 @@ export const InterviewRoom = () => {
                                     className="flex items-center gap-3 px-10 py-4 rounded-2xl text-lg font-bold text-white transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
                                     style={{ background: `linear-gradient(135deg, ${t.accent}, rgba(${t.accentRgb},0.7))`, boxShadow: `0 8px 32px rgba(${t.accentRgb},0.4)` }}>
                                     <Video size={22} />
-                                    {cameraReady ? 'Join Interview' : 'Waiting for Camera...'}
+                                    {cameraReady ? 'Start Interview' : 'Waiting for Camera...'}
                                 </button>
                             </div>
                         )}
