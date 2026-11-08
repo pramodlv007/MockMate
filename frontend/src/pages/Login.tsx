@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { GoogleButton } from '../components/GoogleButton';
 import { Video, Lock, Mail, ArrowRight, Eye, EyeOff, ShieldCheck } from 'lucide-react';
 
 /** Extract a human-readable error message from an Axios error. */
@@ -154,6 +155,8 @@ export const Login = () => {
                             </>
                         )}
                     </button>
+
+                    <GoogleButton onError={setError} />
 
                     {/* Footer link */}
                     <div className="pt-6 text-center">

@@ -241,6 +241,8 @@ export const endpoints = {
         api.post<AuthResponse>('/auth/login', formData, {
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         }),
+    googleLogin: (credential: string) =>
+        api.post<AuthResponse>('/auth/google', { credential }),
     logout: () => api.post('/auth/logout'),
     refresh: () => axios.post<{ access_token: string; token_type: string }>(
         `${API_URL}/auth/refresh`, {}, { withCredentials: true }
