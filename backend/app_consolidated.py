@@ -10,6 +10,7 @@ Route mapping (matches original gateway behaviour):
   /interviews/* → interview_app (strips /interviews prefix → /, /{id}, /{id}/upload)
   /questions/*  → question_app (strips /questions prefix → /generate, /health)
   /evaluation/* → evaluation_app (strips /evaluation prefix → /evaluation/start)
+  /rubric/*     → rubric_app (v2 rubric grader: /questions, /answer)
 
 Internal service URLs for .env:
   QUESTION_SERVICE_URL   = http://localhost:8000/questions
@@ -20,7 +21,9 @@ Internal service URLs for .env:
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-import traceback
+from dotenv import dotenv_values
+from pathlib import Path
+import os, traceback
 
 app = FastAPI(
     title="MockMate API",
@@ -28,9 +31,18 @@ app = FastAPI(
     version="3.0.0",
 )
 
+# Browsers reject "*" on credentialed (cookie) requests, so origins must be listed explicitly.
+_frontend_url = os.getenv("FRONTEND_URL") or dotenv_values(Path(__file__).parent / ".env").get("FRONTEND_URL")
+ALLOWED_ORIGINS = [o for o in [
+    _frontend_url,
+    "http://localhost:5173", "http://localhost:5174", "http://localhost:3000",
+    "http://127.0.0.1:5173", "http://127.0.0.1:5174", "http://127.0.0.1:3000",
+    "https://mockmate-frontend-ten.vercel.app", "https://mockmate.vercel.app",
+] if o]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -42,7 +54,7 @@ def health():
         "status": "ok",
         "service": "mockmate-consolidated",
         "version": "3.0.0",
-        "services": ["auth", "profile", "question", "interview", "evaluation"],
+        "services": ["auth", "profile", "question", "interview", "evaluation", "rubric"],
     }
 
 @app.get("/warmup")
@@ -58,17 +70,26 @@ async def global_exception_handler(request: Request, exc: Exception):
         content={"error": str(exc), "type": type(exc).__name__, "traceback": tb},
     )
 
+# All services live in this process, so internal calls loop back to it unless .env overrides them.
+# Must run before the service imports, which read these at import time.
+_self = f"http://localhost:{os.getenv('PORT', '8000')}"
+for _k, _v in {"AUTH_SERVICE_URL": _self, "QUESTION_SERVICE_URL": f"{_self}/questions",
+               "INTERVIEW_SERVICE_URL": f"{_self}/interviews", "EVALUATION_SERVICE_URL": f"{_self}/evaluation"}.items():
+    os.environ.setdefault(_k, _v)
+
 from services.profile.main import app as profile_app
 from services.question.main import app as question_app
 from services.interview.main import app as interview_app
 from services.evaluation.main import app as evaluation_app
 from services.auth.main import app as auth_app
+from services.rubric.main import app as rubric_app
 
 # Specific prefix mounts first (order matters — more specific before catch-all)
 app.mount("/profile", profile_app)
 app.mount("/questions", question_app)
 app.mount("/interviews", interview_app)
 app.mount("/evaluation", evaluation_app)
+app.mount("/rubric", rubric_app)
 
 # Auth owns /auth/* and /users/* — mount at root as catch-all last
 # auth_app defines full paths (/auth/signup, /users/me) so no prefix stripping needed

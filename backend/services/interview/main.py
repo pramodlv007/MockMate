@@ -8,7 +8,7 @@ from common.auth import get_current_user_id
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
-from common.database import get_db, engine
+from common.database import get_db, create_tables
 from . import models
 from .schemas import InterviewSessionOut, EvaluationPatch
 from pathlib import Path
@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
-models.Base.metadata.create_all(bind=engine)
+create_tables()
 
 # ─── S3 Setup (optional — falls back to local storage if not configured) ─────
 S3_BUCKET = os.getenv("S3_BUCKET_NAME")
@@ -162,7 +162,16 @@ async def create_interview(
 
 # ─── List User's Interviews ───────────────────────────────────────────────────
 @app.get("/user/{user_id}", response_model=list[InterviewSessionOut])
-def get_user_interviews(user_id: str, db: Session = Depends(get_db)):
+def get_user_interviews(
+    user_id: str,
+    db: Session = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    # "me" is what the frontend sends; the old gateway sent the caller's own UUID
+    if user_id == "me":
+        user_id = current_user_id
+    if user_id != current_user_id:
+        raise HTTPException(403, "Not your interviews")
     try:
         uid = uuid.UUID(user_id)
     except ValueError:
@@ -268,7 +277,7 @@ async def upload_video(
                 f"{EVALUATION_SERVICE_URL}/evaluation/start",
                 json={
                     "interview_id":     str(session.id),
-                    "video_path":       str(file_path),
+                    "video_path":       video_storage_path,
                     "company":          session.company_name,
                     "job_description":  session.job_description,
                     "persona":          session.interviewer_persona,

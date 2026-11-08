@@ -7,6 +7,7 @@ import { InterviewSetup } from './pages/InterviewSetup';
 import { InterviewRoom } from './pages/InterviewRoom';
 import { Results } from './pages/Results';
 import { History } from './pages/History';
+import { Practice } from './pages/Practice';
 import { Login } from './pages/Login';
 import { Signup } from './pages/Signup';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -91,6 +92,7 @@ function AppRoutes() {
           <Route path="/new-interview" element={<ProtectedRoute><InterviewSetup /></ProtectedRoute>} />
           <Route path="/interview/:id" element={<ProtectedRoute><InterviewRoom /></ProtectedRoute>} />
           <Route path="/results/:id" element={<ProtectedRoute><Results /></ProtectedRoute>} />
+          <Route path="/practice" element={<ProtectedRoute><Practice /></ProtectedRoute>} />
           <Route path="/history" element={<ProtectedRoute><History /></ProtectedRoute>} />
         </Routes>
       </main>

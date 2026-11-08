@@ -38,6 +38,21 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
 
+
+def create_tables():
+    """create_all() never alters existing tables, so new nullable model columns are added here.
+    shortcut: add-only (no type changes, drops or NOT NULL columns); move to Alembic when those are needed."""
+    from sqlalchemy import inspect, text
+    Base.metadata.create_all(bind=engine)
+    insp = inspect(engine)
+    with engine.begin() as conn:
+        for t in Base.metadata.sorted_tables:
+            have = {c["name"] for c in insp.get_columns(t.name)}
+            for c in t.columns:
+                if c.name not in have and c.nullable:
+                    conn.execute(text(f'ALTER TABLE "{t.name}" ADD COLUMN "{c.name}" {c.type.compile(engine.dialect)}'))
+                    print(f"[DB] added missing column {t.name}.{c.name}")
+
 def get_db():
     db = SessionLocal()
     try:

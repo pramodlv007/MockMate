@@ -1,0 +1,82 @@
+[
+  {
+    "id": "b1", "type": "behavioral", "role": "any",
+    "text": "Tell me about a time you had to deliver a project under a tight deadline.",
+    "sample_answer": "Last spring our payments team had three weeks to ship invoice export before a customer's audit. I owned the backend and cut scope to CSV only, then paired with a teammate on the UI. I wrote the export as a background job, load-tested it with 50k invoices, and we shipped two days early. The customer passed the audit and support tickets about missing invoices dropped by about 40%."
+  },
+  {
+    "id": "b2", "type": "behavioral", "role": "any",
+    "text": "Describe a disagreement with a teammate and how you resolved it.",
+    "sample_answer": "A colleague and I disagreed on whether to split our monolith before a launch. I was worried about the two-month delay; they were worried about deploy times. I proposed we measure: I profiled deploys and showed only one module caused the slowdown. We extracted that module alone, which took a week, and cut deploy time from 25 to 9 minutes while still launching on schedule."
+  },
+  {
+    "id": "b3", "type": "behavioral", "role": "any",
+    "text": "Tell me about a time you made a mistake at work and what you did about it.",
+    "sample_answer": "I once ran a data migration without a dry run and corrupted about 2% of user preferences. I flagged it to my manager within ten minutes, restored the affected rows from the nightly backup in an hour, and personally emailed the 300 affected users. Afterwards I added a mandatory dry-run step to our migration script, and we have had no migration incidents since."
+  },
+  {
+    "id": "t1", "type": "technical", "role": "backend",
+    "text": "What is idempotency in an HTTP API, and how would you make a payment endpoint idempotent?",
+    "points": [
+      {"id": "definition", "text": "Defines idempotency: repeating the same request has the same effect as sending it once"},
+      {"id": "http_methods", "text": "Notes that GET, PUT and DELETE are idempotent by specification while POST is not by default"},
+      {"id": "idempotency_key", "text": "Proposes a client-generated unique idempotency key per logical operation"},
+      {"id": "store_result", "text": "Stores the key with the result and returns the stored response on a retry"},
+      {"id": "atomicity", "text": "Makes key storage atomic with the side effect (unique constraint or transaction) so concurrent retries cannot double-charge"}
+    ],
+    "misconceptions": [
+      "Idempotent means the response is identical every time (it is the effect that must be the same)",
+      "Idempotent means safe or read-only"
+    ],
+    "sample_answer": "An operation is idempotent if repeating it has the same effect as doing it once. GET, PUT and DELETE are idempotent by spec; POST is not. For payments the client sends a unique idempotency key with each logical charge. The server stores the key and the response; on a retry it returns the stored response instead of charging again. The key insert must be atomic with the charge, for example a unique constraint inside the same transaction, so two concurrent retries cannot both succeed."
+  },
+  {
+    "id": "t2", "type": "technical", "role": "backend",
+    "text": "Why would you add a database index, and what does it cost?",
+    "points": [
+      {"id": "speeds_reads", "text": "Explains an index avoids a full table scan so lookups are faster (for example B-tree, logarithmic)"},
+      {"id": "query_shapes", "text": "Says indexes help filters, joins and ORDER BY on the indexed columns"},
+      {"id": "write_cost", "text": "States that inserts, updates and deletes get slower because the index must be maintained"},
+      {"id": "storage_cost", "text": "States that indexes use additional storage"},
+      {"id": "composite_order", "text": "Explains that column order in a composite index matters (leftmost prefix)"},
+      {"id": "verify", "text": "Says to verify with the query plan (EXPLAIN) rather than assume the index is used"}
+    ],
+    "misconceptions": [
+      "Index every column to be safe",
+      "An index is always used by the planner (low-selectivity columns often are not)"
+    ],
+    "sample_answer": "An index lets the database find rows without scanning the whole table, typically with a B-tree. It speeds up filters, joins and ORDER BY on those columns. The cost is that every insert, update and delete must also maintain the index, and it takes extra storage, so you do not index everything. For composite indexes the column order matters because only a leftmost prefix can be used. I confirm with EXPLAIN that the planner actually uses it."
+  },
+  {
+    "id": "t3", "type": "technical", "role": "backend",
+    "text": "Explain the cache-aside pattern and what can go wrong with it.",
+    "points": [
+      {"id": "read_path", "text": "Describes the read path: check the cache first, on a miss read the database and populate the cache"},
+      {"id": "write_path", "text": "Describes the write path: write to the database and invalidate (or update) the cache entry"},
+      {"id": "ttl", "text": "Mentions a TTL to bound staleness"},
+      {"id": "stale_race", "text": "Identifies stale data or a race between invalidation and a concurrent read"},
+      {"id": "stampede", "text": "Identifies cache stampede when a hot key expires and names a mitigation (locking, request coalescing or TTL jitter)"}
+    ],
+    "misconceptions": [
+      "The cache is the source of truth",
+      "Caching removes the need to think about consistency"
+    ],
+    "sample_answer": "On a read the app checks the cache; on a miss it reads the database and stores the result in the cache. On a write it updates the database and invalidates the cache entry. A TTL bounds how stale data can get. Problems include a race where a reader repopulates the cache with old data just after invalidation, and a stampede when a hot key expires and many requests hit the database at once, which I would mitigate with a lock or request coalescing and jittered TTLs."
+  },
+  {
+    "id": "t4", "type": "technical", "role": "frontend",
+    "text": "What causes unnecessary re-renders in React, and how do you reduce them?",
+    "points": [
+      {"id": "default_rerender", "text": "States that a component re-renders when its state or props change and by default its children re-render too"},
+      {"id": "identity", "text": "Explains that new object, array or function identities created each render defeat memoization"},
+      {"id": "memo_tools", "text": "Names React.memo, useMemo or useCallback as tools to skip work"},
+      {"id": "state_placement", "text": "Suggests colocating or lowering state so fewer components depend on it"},
+      {"id": "measure", "text": "Says to measure with the React Profiler before optimizing"}
+    ],
+    "misconceptions": [
+      "Wrap everything in useMemo and useCallback (memoization has its own cost)",
+      "Re-rendering means the DOM is updated (React only commits real changes)"
+    ],
+    "sample_answer": "A component re-renders when its state or props change, and by default all its children re-render with it. Passing a new object or inline function each render breaks memoization of children. React.memo, useMemo and useCallback help, but the bigger win is usually keeping state close to where it is used. I use the React Profiler to find real hotspots first, because memoizing everything has its own cost."
+  }
+]

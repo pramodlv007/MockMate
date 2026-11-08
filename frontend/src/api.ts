@@ -222,6 +222,16 @@ export interface CreateInterviewPayload {
     skills?: string;
 }
 
+export interface RubricQuestion { id: string; type: 'behavioral' | 'technical'; role: string; text: string }
+export interface RubricPoint {
+    point_id: string; label: string; covered: boolean;
+    evidence_span: string | null; evidence_valid: boolean; feedback: string;
+}
+export interface RubricResult {
+    question_id: string; points: RubricPoint[]; transcript: string;
+    grade_ms: number; asr_ms: number; sample_answer: string; misconceptions: string[];
+}
+
 // ─── Endpoint Map ─────────────────────────────────────────────────────────────
 export const endpoints = {
     // Auth
@@ -252,6 +262,17 @@ export const endpoints = {
         form.append('file', file, 'recording.webm');
         // Don't set Content-Type — axios sets multipart/form-data + boundary automatically for FormData
         return api.post(`/interviews/${id}/upload`, form);
+    },
+
+    // Rubric practice (v2)
+    getRubricQuestions: (type: string, role: string) =>
+        api.get<RubricQuestion[]>('/rubric/questions', { params: { type, role } }),
+    submitRubricAnswer: (questionId: string, audio: Blob | null, transcript: string) => {
+        const form = new FormData();
+        form.append('question_id', questionId);
+        if (audio) form.append('audio', audio, 'answer.webm');
+        else form.append('transcript', transcript);
+        return api.post<RubricResult>('/rubric/answer', form);
     },
 
     // Profile service

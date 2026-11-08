@@ -1,0 +1,1 @@
+faster-whisper   # local speech-to-text for /rubric/answer (optional; typed transcripts work without it)
