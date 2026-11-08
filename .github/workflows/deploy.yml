@@ -1,104 +1,138 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# MockMate — GitHub Actions CI/CD Pipeline (AWS EC2)
+# MockMate — CI/CD (GitHub Actions → GHCR → AWS EC2)
 #
-# Triggers on every push to `main`:
-#   Job 1: test    — install deps, build frontend, run backend tests
-#   Job 2: deploy  — rsync frontend dist + nginx config to EC2, git pull,
-#                    rebuild Docker, reload nginx
+# Every commit, any branch:
+#   test   — backend unit tests + frontend build
+#   image  — build the backend Docker image, smoke-test it against Postgres,
+#            push it to ghcr.io tagged with the commit SHA
+# Push to main only:
+#   deploy — EC2 pulls that exact tested image, swaps the container,
+#            rolls back to the previous image if the health check fails
 #
-# Required GitHub Secrets (Settings → Secrets → Actions):
-#   EC2_HOST       — public IPv4 of your EC2 instance  (e.g. 3.19.239.13)
-#   EC2_USER       — SSH user                           (ec2-user)
-#   EC2_SSH_KEY    — contents of your .pem file         (-----BEGIN RSA...)
-#   VITE_API_URL   — backend URL served by nginx        (http://3.19.239.13)
+# Required GitHub Secrets: EC2_HOST, EC2_USER, EC2_SSH_KEY, VITE_API_URL
+# The registry login uses the built-in GITHUB_TOKEN; no extra secret needed.
+# EC2 keeps its runtime config in ~/MockMate/.env (never baked into the image).
 # ─────────────────────────────────────────────────────────────────────────────
 
 name: MockMate CI/CD
 
 on:
   push:
-    branches: [main]
   pull_request:
     branches: [main]
 
 concurrency:
-  group: ${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # never cancel a production deploy halfway through
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
-# ── Job 1: Test ───────────────────────────────────────────────────────────────
+env:
+  # GHCR names must be lowercase; repository_owner (pramodlv007) already is
+  IMAGE: ghcr.io/${{ github.repository_owner }}/mockmate-backend:${{ github.sha }}
+
 jobs:
   test:
     name: Test & Build
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # ── Python / Backend ──────────────────────────────────────────────────
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
-
       - name: Install backend dependencies
         run: pip install -r backend/requirements.txt
-
       - name: Run backend tests
-        run: |
-          cd backend
-          python -m pytest tests/ -v --tb=short 2>/dev/null \
-            || echo "No tests found — skipping"
+        run: cd backend && python -m pytest rubric_eval -v --tb=short
 
-      # ── Node / Frontend ───────────────────────────────────────────────────
-      - name: Set up Node 20
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
-
-      - name: Install frontend dependencies
-        run: cd frontend && npm ci
-
       - name: Build frontend
-        run: cd frontend && npm run build
+        run: cd frontend && npm ci && npm run build
         env:
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
-
-      - name: Upload frontend dist artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: frontend-dist
           path: frontend/dist
           retention-days: 1
 
-  # ── Job 2: Deploy → EC2 ───────────────────────────────────────────────────
-  deploy:
-    name: Deploy to EC2
+  image:
+    name: Docker image
     needs: test
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      # Re-build frontend in this job so dist/ is in the workspace for rsync
-      - name: Set up Node 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install & build frontend
-        run: cd frontend && npm ci && npm run build
+    permissions:
+      contents: read
+      packages: write
+    services:
+      postgres:
+        image: postgres:16
         env:
-          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+          POSTGRES_USER: mockmate
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: mockmate_db
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U mockmate" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
 
-      # ── Write SSH key ─────────────────────────────────────────────────────
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          file: backend/Dockerfile.consolidated
+          load: true
+          tags: ${{ env.IMAGE }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test image
+        run: |
+          docker run -d --name smoke --network host "$IMAGE"
+          for i in $(seq 1 30); do
+            curl -sf localhost:8000/health && break
+            sleep 2
+          done
+          curl -sf localhost:8000/health | grep -q '"ok"'
+          curl -sf localhost:8000/rubric/health | grep -q '"ok"'
+          # a real DB write catches schema drift (the old signup 500)
+          curl -sf -X POST localhost:8000/auth/signup -H 'Content-Type: application/json' \
+            -d "{\"email\":\"ci-${GITHUB_RUN_ID}@example.com\",\"password\":\"Passw0rd!x\",\"full_name\":\"CI\"}" \
+            | grep -q access_token
+          echo "Smoke test passed"
+      - name: Container logs on failure
+        if: failure()
+        run: docker logs smoke --tail 80 || true
+
+      - name: Push image to GHCR
+        if: github.event_name == 'push'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker push "$IMAGE"
+
+  deploy:
+    name: Deploy to EC2
+    needs: image
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+
       - name: Write SSH key
         run: |
           mkdir -p ~/.ssh
@@ -106,107 +140,72 @@ jobs:
           chmod 600 ~/.ssh/ec2.pem
           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
 
-      # ── Sync frontend dist to EC2 ─────────────────────────────────────────
-      - name: Sync frontend dist to EC2
+      - name: Sync frontend and nginx config
         run: |
-          rsync -az --delete \
-            -e "ssh -i ~/.ssh/ec2.pem -o StrictHostKeyChecking=no" \
-            frontend/dist/ \
+          SSH="ssh -i ~/.ssh/ec2.pem -o StrictHostKeyChecking=no"
+          rsync -az --delete -e "$SSH" frontend/dist/ \
             ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/${{ secrets.EC2_USER }}/MockMate/frontend/dist/
-
-      # ── Sync nginx config (avoids YAML heredoc-in-heredoc issues) ─────────
-      - name: Sync nginx config to EC2
-        run: |
-          scp -i ~/.ssh/ec2.pem -o StrictHostKeyChecking=no \
-            nginx/mockmate.conf \
+          scp -i ~/.ssh/ec2.pem -o StrictHostKeyChecking=no nginx/mockmate.conf \
             ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/tmp/mockmate.conf
 
-      # ── Pull latest code & rebuild Docker on EC2 ──────────────────────────
-      - name: Deploy backend on EC2
+      - name: Deploy backend container
         run: |
-          ssh -i ~/.ssh/ec2.pem \
-              -o StrictHostKeyChecking=no \
-              -o ServerAliveInterval=30 \
-              ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} bash -s << 'ENDSSH'
+          SSH="ssh -i ~/.ssh/ec2.pem -o StrictHostKeyChecking=no -o ServerAliveInterval=30 ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}"
+          # token goes over stdin, never on the remote command line; it expires when this job ends
+          echo "${{ secrets.GITHUB_TOKEN }}" | $SSH "docker login ghcr.io -u ${{ github.actor }} --password-stdin"
+          $SSH "IMAGE=$IMAGE bash -s" << 'ENDSSH'
           set -e
           cd ~/MockMate
 
-          echo "==> Pulling latest code..."
-          git fetch origin main
-          git checkout main
-          git reset --hard origin/main
-
-          echo "==> Checking nginx config..."
-          # Only overwrite nginx config if SSL is NOT yet configured
-          # (certbot modifies the config — we don't want to blow that away)
+          # certbot rewrites the nginx config once SSL is on; only install ours before that
           if [ ! -f /etc/letsencrypt/live/*/fullchain.pem ]; then
-            echo "    No SSL cert found — installing base nginx config"
             sudo cp /tmp/mockmate.conf /etc/nginx/conf.d/mockmate.conf
-          else
-            echo "    SSL cert exists — preserving certbot-managed nginx config"
           fi
           sudo nginx -t
 
-          echo "==> Rebuilding Docker image..."
-          docker build -f backend/Dockerfile.consolidated backend/ -t mockmate
+          echo "==> Pulling $IMAGE"
+          docker pull "$IMAGE"
+          docker logout ghcr.io
 
-          echo "==> Restarting container..."
-          docker stop mockmate 2>/dev/null || true
-          docker rm   mockmate 2>/dev/null || true
-          docker run -d \
-            --name mockmate \
-            --env-file .env \
-            -p 8000:8000 \
-            --restart unless-stopped \
-            mockmate
+          PREV=$(docker inspect --format '{{.Config.Image}}' mockmate 2>/dev/null || true)
+          run() { docker run -d --name mockmate --env-file .env -p 8000:8000 --restart unless-stopped "$1"; }
+          healthy() {
+            for i in $(seq 1 15); do
+              curl -sf localhost:8000/health | grep -q '"ok"' && return 0
+              sleep 5
+            done
+            return 1
+          }
 
-          echo "==> Waiting for health check..."
-          for i in $(seq 1 15); do
-            STATUS=$(curl -sf http://localhost:8000/health 2>/dev/null \
-              | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null \
-              || echo "")
-            if [ "$STATUS" = "ok" ]; then
-              echo "Backend is healthy!"
-              break
+          docker rm -f mockmate 2>/dev/null || true
+          run "$IMAGE"
+          if ! healthy; then
+            echo "ERROR: new image unhealthy"
+            docker logs mockmate --tail 50
+            docker rm -f mockmate
+            if [ -n "$PREV" ]; then
+              run "$PREV"
+              healthy && echo "Rolled back to $PREV"
             fi
-            echo "  Attempt $i/15 — retrying in 5s..."
-            sleep 5
-          done
-
-          if [ "$STATUS" != "ok" ]; then
-            echo "ERROR: backend never became healthy"
-            docker logs mockmate --tail 30
             exit 1
           fi
 
-          echo "==> Reloading nginx..."
+          docker image prune -af   # old images stay in GHCR, re-pull by SHA to roll back by hand
           sudo systemctl reload nginx
-          echo "==> Deployment complete!"
+          echo "==> Deployed $IMAGE"
           ENDSSH
 
-      # ── Smoke test ────────────────────────────────────────────────────────
       - name: Smoke test
         run: |
-          echo "Testing API health..."
-          curl -sf http://${{ secrets.EC2_HOST }}/health \
-            | python3 -c "import sys,json; d=json.load(sys.stdin); print('API:', d.get('status')); exit(0 if d.get('status')=='ok' else 1)"
-
-          echo "Testing frontend..."
-          HTTP_CODE=$(curl -so /dev/null -w "%{http_code}" http://${{ secrets.EC2_HOST }}/)
-          echo "Frontend HTTP $HTTP_CODE"
-          [ "$HTTP_CODE" = "200" ] || exit 1
-
-          echo "Testing warmup..."
-          curl -sf http://${{ secrets.EC2_HOST }}/warmup \
-            | python3 -c "import sys,json; d=json.load(sys.stdin); print('Warmup:', d.get('status'))"
+          curl -sf http://${{ secrets.EC2_HOST }}/health | grep -q '"ok"'
+          [ "$(curl -so /dev/null -w '%{http_code}' http://${{ secrets.EC2_HOST }}/)" = "200" ]
+          curl -sf http://${{ secrets.EC2_HOST }}/rubric/health | grep -q '"ok"'
 
       - name: Summary
         if: always()
         run: |
-          echo "### Deployment Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Target | URL |" >> $GITHUB_STEP_SUMMARY
-          echo "|--------|-----|" >> $GITHUB_STEP_SUMMARY
+          echo "### Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "| | |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
           echo "| App | http://${{ secrets.EC2_HOST }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| API Health | http://${{ secrets.EC2_HOST }}/health |" >> $GITHUB_STEP_SUMMARY
-          echo "| Commit | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Image | \`$IMAGE\` |" >> $GITHUB_STEP_SUMMARY

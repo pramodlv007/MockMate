@@ -17,7 +17,7 @@ IS_PRODUCTION = POSTGRES_SERVER != "localhost"
 query_params = {"sslmode": "require"} if IS_PRODUCTION else {}
 
 SQLALCHEMY_DATABASE_URL = URL.create(
-    drivername="postgresql",
+    drivername="postgresql+psycopg2",  # SQLAlchemy 2.1 defaults bare "postgresql" to psycopg v3, which isn't installed
     username=POSTGRES_USER,
     password=POSTGRES_PASSWORD,
     host=POSTGRES_SERVER,
