@@ -44,7 +44,7 @@ jobs:
       - name: Install backend dependencies
         run: pip install -r backend/requirements.txt
       - name: Run backend tests
-        run: cd backend && python -m pytest rubric_eval -v --tb=short
+        run: cd backend && python -m pytest tests rubric_eval -v --tb=short
 
       - uses: actions/setup-node@v4
         with:
