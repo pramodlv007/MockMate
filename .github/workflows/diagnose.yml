@@ -93,4 +93,38 @@ jobs:
           except Exception as e:
               print("DATABASE_URL CONNECT: FAILED -", type(e).__name__, "-", " ".join(str(e).split())[:400])
           ' 2>&1 | tail -3 | mask
+
+          echo; echo "== supabase project probe (settings the app really uses: /app/.env)"
+          timeout 90 docker run --rm "$IMG" python -c '
+          import urllib.error, urllib.request
+          from dotenv import dotenv_values
+          from sqlalchemy import create_engine, text
+          from sqlalchemy.engine import URL
+          cfg = dotenv_values("/app/.env")
+          user, server = cfg.get("POSTGRES_USER") or "", cfg.get("POSTGRES_SERVER") or ""
+          ref = user.split(".", 1)[1] if "." in user else ""
+          def hide(s):
+              s = " ".join(str(s).split())
+              return (s.replace(ref, "***") if ref else s)[:220]
+          print("project id in pooler user:", bool(ref), "| port:", cfg.get("POSTGRES_PORT"))
+          if ref:
+              try:
+                  r = urllib.request.urlopen(f"https://{ref}.supabase.co/rest/v1/", timeout=15)
+                  print("project API: HTTP", r.status)
+              except urllib.error.HTTPError as e:
+                  print("project API: HTTP", e.code, hide(e.read()[:150].decode(errors="replace")))
+              except Exception as e:
+                  print("project API: unreachable -", type(e).__name__, hide(e))
+          other = server.replace("aws-1-", "aws-0-") if "aws-1-" in server else server.replace("aws-0-", "aws-1-")
+          for h in dict.fromkeys([server, other]):
+              u = URL.create("postgresql+psycopg2", username=user, password=cfg.get("POSTGRES_PASSWORD"), host=h,
+                             port=int(cfg.get("POSTGRES_PORT") or 5432), database=cfg.get("POSTGRES_DB") or "postgres",
+                             query={"sslmode": "require"})
+              try:
+                  with create_engine(u, connect_args={"connect_timeout": 10}).connect() as c:
+                      c.execute(text("select 1"))
+                  print(h.split(".")[0], "pooler login: OK")
+              except Exception as e:
+                  print(h.split(".")[0], "pooler login: FAILED -", hide(e))
+          ' 2>&1 | tail -6 | mask
           ENDSSH
