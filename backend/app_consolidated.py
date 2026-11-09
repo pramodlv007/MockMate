@@ -37,7 +37,6 @@ ALLOWED_ORIGINS = [o for o in [
     _frontend_url,
     "http://localhost:5173", "http://localhost:5174", "http://localhost:3000",
     "http://127.0.0.1:5173", "http://127.0.0.1:5174", "http://127.0.0.1:3000",
-    "https://mockmate-frontend-ten.vercel.app", "https://mockmate.vercel.app",
 ] if o]
 
 app.add_middleware(

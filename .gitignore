@@ -8,6 +8,7 @@ Thumbs.db
 *.db
 .env
 .env.*
+!.env.example
 
 # Backend specific
 backend/uploads/
@@ -16,18 +17,6 @@ backend/mockmate.db
 # Frontend specific
 frontend/dist/
 frontend/node_modules/
-frontend/.vercel/
-
-# AWS SAM build artifacts (large, auto-generated)
-aws/.aws-sam/
-aws/.aws-sam/**
-
-# Lambda backend bundles — auto-copied by build.ps1 / GitHub Actions
-# Do NOT commit these — they are rebuilt at CI time from backend/
-aws/lambda/**/backend/
-
-# SAM local overrides — samconfig.toml is committed, but local test overrides are not
-aws/samconfig.local.toml
 
 # AWS credentials — NEVER commit these
 .aws/

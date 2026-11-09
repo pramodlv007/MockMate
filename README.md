@@ -7,7 +7,7 @@
 **Practice. Get evaluated. Ace your next interview.**
 
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688?style=for-the-badge&logo=fastapi)](https://fastapi.tiangolo.com)
-[![React](https://img.shields.io/badge/React-18+-61DAFB?style=for-the-badge&logo=react)](https://react.dev)
+[![React](https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5+-3178C6?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-4169E1?style=for-the-badge&logo=postgresql)](https://postgresql.org)
 [![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker)](https://docker.com)
@@ -64,7 +64,7 @@ MockMate is a full end-to-end interview simulation platform. You pick a company,
 | No structure to your preparation | Personalized 7-day training plan based on your gaps |
 | Unaware of filler words and pace issues | Speech metrics: WPM, filler count, pacing assessment |
 | Body language blind spots | Vision AI scores eye contact, posture, and engagement |
-| Questions repeat across sessions | Cross-session deduplication — never the same question twice |
+| Questions repeat across sessions | Cross-session deduplication of previously asked questions |
 
 ---
 
@@ -82,7 +82,7 @@ MockMate runs as a **consolidated FastAPI application** — all microservices mo
 ┌─────────────────────────────────────────────────────────────┐
 │               nginx  (EC2 port 80)                           │
 │   Static files → frontend/dist                               │
-│   /auth/* /users/* /interviews/* /profile/* → :8000          │
+│   /auth /users /profile /interviews /rubric … → :8000        │
 └──────────────────────────┬──────────────────────────────────┘
                            │
                            ▼
@@ -95,6 +95,7 @@ MockMate runs as a **consolidated FastAPI application** — all microservices mo
 │  /questions/*   → Question Service (AI question generation)  │
 │  /interviews/*  → Interview Service (sessions, video upload) │
 │  /evaluation/*  → Evaluation Service (AI scoring pipeline)   │
+│  /rubric/*      → Rubric Service  (single-question practice) │
 └──────────────────────────┬──────────────────────────────────┘
                            │
               ┌────────────┼────────────┐
@@ -109,42 +110,42 @@ MockMate runs as a **consolidated FastAPI application** — all microservices mo
 |---|---|
 | `/auth/*` `/users/*` | Signup, login, JWT tokens, user profile |
 | `/profile/*` | Resume upload & text extraction, GitHub analysis |
-| `/questions/*` | AI question generation (Gemini 2.5 Flash + DeepSeek fallback) |
-| `/interviews/*` | Session lifecycle, video upload to S3, transcript storage |
-| `/evaluation/*` | 4-agent AI pipeline — transcription, content, vision, synthesis |
+| `/questions/*` | AI question generation (Gemini 2.5 Flash + DeepSeek fallback). Internal only |
+| `/interviews/*` | Session lifecycle, video upload to S3, transcripts, deletion. Owner-only access |
+| `/evaluation/*` | AI evaluation pipeline. Internal only |
+| `/rubric/*` | Practice mode: one question, graded against a fixed rubric (`services/rubric/bank.json`) |
+
+"Internal only" endpoints require the `X-Internal-Token` header (`INTERNAL_API_TOKEN`); the services call
+each other over `localhost` inside the one process.
 
 ---
 
 ## GenAI Pipeline
 
-MockMate's evaluation engine is a **4-agent AI pipeline** powered by Gemini 2.5 Flash.
+MockMate's evaluation runs as a background task after the video upload, powered by Gemini 2.5 Flash.
 
 ```
-Video Upload (stored on AWS S3)
+Video upload (S3, or local disk in dev)
+     │
+     ├─ Transcription ── Gemini: full transcript of the recording
+     ├─ Body language ── Gemini video analysis (3-frame fallback): eye contact, posture, engagement
+     └─ Speech metrics ─ no AI: real duration (ffmpeg), WPM, filler words
      │
      ▼
-Agent 1 · SCRIBE  ── Gemini 2.5 Flash native video transcription
-     │                Output: per-question verbatim transcript
+Per-question answers ── browser-captured transcripts if present, else LLM segmentation
      │
-     ├─────────────────────────────────────┐
-     ▼                                     ▼
-Agent 2 · OBSERVER                  Speech Metrics
-Gemini Vision — 3 frames sampled    WPM · filler words · pace
-Eye contact % · Posture %
-Engagement score
-     │                                     │
-     └──────────────┬──────────────────────┘
-                    ▼
-Agent 3 · EVALUATOR + SYNTHESIZER  ── Gemini 2.5 Flash
-Inputs:  Transcript + resume + JD + questions + vision + speech
-Outputs:
-  ├─ Overall score (0–100) + hire recommendation
-  ├─ Section scores (Technical, Communication, Problem-Solving)
-  ├─ Per-question breakdown with score + feedback
-  ├─ Top-10 mistakes with direct quotes + suggested fixes
-  ├─ Strengths & critical improvements
-  └─ Personalized 7-day training plan
+     ▼
+Per-question evaluation ── LLM, with resume + JD context: 5 sub-scores + feedback
+     │
+     ▼
+Composite score ── deterministic Python: content 60% · communication 25% · presence 15%
+     │
+     ▼
+Synthesis ── LLM writes the summary only (scores are inputs, not outputs):
+             hire recommendation, strengths, top mistakes, resume/JD alignment, 7-day training plan
 ```
+
+Any failure marks the session `error`, which the Results page shows instead of a spinner.
 
 ### Question Generation Intelligence
 
@@ -171,19 +172,19 @@ Outputs:
 
 ## Infrastructure & Deployment
 
-MockMate is deployed on **AWS** with a CI/CD pipeline via GitHub Actions.
+MockMate is deployed on **AWS** with a CI/CD pipeline via GitHub Actions (`.github/workflows/deploy.yml`).
 
 ```
-git push origin main
-        │
-        ▼
-GitHub Actions
-  ├── Test — Python tests + TypeScript build
-  ├── Build — Vite frontend with EC2 API URL
-  ├── Sync  — rsync frontend/dist → EC2 via SSH
-  ├── Deploy — SSH: git pull + docker build + restart
-  └── Smoke test — health check against EC2
+every push / PR
+  ├── test   — backend pytest (backend/tests, rubric_eval) + frontend build; fails the run on any failure
+  └── image  — build backend Docker image, smoke-test it against Postgres, push to GHCR (tagged with the SHA)
+push to main only
+  └── deploy — rsync frontend/dist + nginx config to EC2, pull the tested image, swap the container,
+               roll back to the previous image if the health check fails, then smoke-test the live site
 ```
+
+`.github/workflows/diagnose.yml` is a manual, read-only EC2 health check. `aws/setup-https.sh` sets up
+Let's Encrypt on the server.
 
 ### AWS Stack
 
@@ -273,19 +274,10 @@ aws s3api get-bucket-lifecycle-configuration --bucket mockmate-videos-pramod
 ```bash
 git clone https://github.com/pramodlv007/MockMate.git
 cd MockMate
+cp backend/.env.example backend/.env   # then fill in GOOGLE_API_KEY, SECRET_KEY, REFRESH_SECRET_KEY
 ```
 
-Create `backend/.env`:
-
-```env
-DATABASE_URL=postgresql://user:password@host:5432/dbname
-SECRET_KEY=your-jwt-secret-key
-GEMINI_API_KEY=your-gemini-api-key
-QUESTION_SERVICE_URL=http://localhost:8000/questions
-INTERVIEW_SERVICE_URL=http://localhost:8000/interviews
-EVALUATION_SERVICE_URL=http://localhost:8000/evaluation
-AUTH_SERVICE_URL=http://localhost:8000
-```
+`backend/.env.example` documents every variable the backend reads. Leave the `*_SERVICE_URL` variables unset.
 
 ### 2. Start Backend
 
@@ -303,6 +295,17 @@ npm install
 npm run dev
 ```
 
+Optional `frontend/.env`: `VITE_API_URL` (default `http://localhost:8000`) and `VITE_GOOGLE_CLIENT_ID`.
+
+### Tests
+
+```bash
+cd backend
+python -m pytest tests rubric_eval
+```
+
+The tests use in-memory SQLite and mock S3/LLM calls; no services or keys needed.
+
 ### 4. Open the App
 
 | Service | URL |
@@ -316,29 +319,35 @@ npm run dev
 
 ```
 MockMate/
-├── .github/workflows/deploy.yml   # CI/CD: test → build → EC2 deploy
+├── .github/workflows/
+│   ├── deploy.yml                 # CI/CD: test → image → EC2 deploy
+│   └── diagnose.yml               # manual read-only EC2 diagnostics
+├── aws/setup-https.sh             # Let's Encrypt setup on EC2
+├── nginx/mockmate.conf            # static frontend + API reverse proxy
 ├── backend/
 │   ├── app_consolidated.py        # Single FastAPI app — all services mounted
 │   ├── common/
-│   │   ├── auth.py                # Shared JWT validation dependency
+│   │   ├── auth.py                # JWT validation, internal-token check, rate-limit key
 │   │   └── database.py            # SQLAlchemy engine + session
 │   ├── services/
-│   │   ├── auth/                  # Signup, login, token refresh, user profile
+│   │   ├── auth/                  # Signup, login, Google sign-in, token refresh, user profile
 │   │   ├── profile/               # Resume upload, GitHub analysis
 │   │   ├── question/              # AI question generation engine
 │   │   │   ├── engine.py          # Gemini + DeepSeek, resume intelligence
 │   │   │   └── company_patterns.py # Per-company question styles
-│   │   ├── interview/             # Sessions, S3 video upload, transcripts
-│   │   └── evaluation/            # 4-agent AI evaluation pipeline
-│   ├── Dockerfile.consolidated    # Single-container build
+│   │   ├── interview/             # Sessions, video upload, transcripts, deletion
+│   │   ├── evaluation/            # AI evaluation pipeline
+│   │   └── rubric/                # Rubric-graded practice questions
+│   ├── rubric_eval/               # Grader metrics + tests
+│   ├── tests/                     # API tests (auth, ownership, limits, speech metrics)
+│   ├── Dockerfile.consolidated    # The image CI builds and EC2 runs
 │   └── requirements.txt
-├── frontend/
-│   ├── src/
-│   │   ├── pages/                 # Home, Login, Signup, InterviewRoom, Results, Profile
-│   │   ├── components/            # Reusable UI components
-│   │   └── context/               # Auth context
-│   └── package.json
-└── Dockerfile.consolidated        # Root-level copy for EC2 deploy
+└── frontend/
+    ├── src/
+    │   ├── pages/                 # Home, Login, Signup, InterviewSetup, InterviewRoom, Results, History, Practice, Profile
+    │   ├── components/            # Header, GoogleButton
+    │   └── context/               # Auth context
+    └── package.json
 ```
 
 ---
@@ -346,19 +355,19 @@ MockMate/
 ## Authentication Flow
 
 ```
-Signup/Login → Access Token (30 min, Bearer)
-             + Refresh Token (7 days, rotation)
-                   │
-           Every 25 min → Silent /auth/refresh
-                   │
-           Logout  → Tokens cleared
+Signup / Login / Google → Access token (30 min, kept in memory, sent as Bearer)
+                        + Refresh token (7 days, HttpOnly cookie, rotated on every refresh)
+                                │
+        On page load or any 401 → silent POST /auth/refresh, then retry the request
+                                │
+                     Logout → cookie cleared, in-memory token dropped
 ```
 
 ---
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) for details.
+MIT License. No LICENSE file has been added to the repository yet.
 
 ---
 
