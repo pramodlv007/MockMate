@@ -259,6 +259,8 @@ export const endpoints = {
         api.get<InterviewSession>(`/interviews/${id}`),
     getUserInterviews: () =>
         api.get<InterviewSession[]>(`/interviews/user/me`),
+    saveTranscripts: (id: string | number, transcripts: Record<number, string>) =>
+        api.post(`/interviews/${id}/transcripts`, { transcripts }),
     uploadVideo: (id: string | number, file: Blob) => {
         const form = new FormData();
         form.append('file', file, 'recording.webm');

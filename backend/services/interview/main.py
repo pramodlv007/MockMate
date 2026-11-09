@@ -4,7 +4,7 @@ Manages interview sessions: create, fetch, upload video, patch evaluation result
 Calls Question Service to generate questions on session creation.
 """
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Request
-from common.auth import get_current_user_id
+from common.auth import get_current_user_id, get_optional_user_id, is_internal, require_internal, INTERNAL_HEADERS
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
@@ -51,6 +51,18 @@ EVALUATION_SERVICE_URL = os.getenv("EVALUATION_SERVICE_URL", "http://localhost:8
 AUTH_SERVICE_URL       = os.getenv("AUTH_SERVICE_URL",       "http://localhost:8001")
 UPLOAD_DIR = Path(__file__).parent.parent.parent / "uploads" / "videos"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _session_or_404(db: Session, interview_id: str, user_id=None, internal: bool = False):
+    """Load a session; unless the caller is internal it must belong to user_id. 404 (not 403) hides existence."""
+    try:
+        iid = uuid.UUID(interview_id)
+    except ValueError:
+        raise HTTPException(400, "Invalid interview_id")
+    session = db.query(models.InterviewSession).filter(models.InterviewSession.id == iid).first()
+    if not session or not (internal or (user_id and str(session.user_id) == str(user_id))):
+        raise HTTPException(404, "Interview not found")
+    return session
 
 
 # ─── Create Interview Session ─────────────────────────────────────────────────
@@ -187,17 +199,15 @@ def get_user_interviews(
 
 # ─── Get Single Interview ─────────────────────────────────────────────────────
 @app.get("/{interview_id}", response_model=InterviewSessionOut)
-def get_interview(interview_id: str, db: Session = Depends(get_db)):
-    try:
-        iid = uuid.UUID(interview_id)
-    except ValueError:
-        raise HTTPException(400, "Invalid interview_id")
-    session = db.query(models.InterviewSession).filter(
-        models.InterviewSession.id == iid
-    ).first()
-    if not session:
-        raise HTTPException(404, "Interview not found")
-    return session
+def get_interview(
+    interview_id: str,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_optional_user_id),
+    internal: bool = Depends(is_internal),  # evaluation service reads browser transcripts
+):
+    if not (user_id or internal):
+        raise HTTPException(401, "Not authenticated")
+    return _session_or_404(db, interview_id, user_id, internal)
 
 
 # ─── Upload Video ─────────────────────────────────────────────────────────────
@@ -206,17 +216,9 @@ async def upload_video(
     interview_id: str,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
 ):
-    try:
-        iid = uuid.UUID(interview_id)
-    except ValueError:
-        raise HTTPException(400, "Invalid interview_id")
-
-    session = db.query(models.InterviewSession).filter(
-        models.InterviewSession.id == iid
-    ).first()
-    if not session:
-        raise HTTPException(404, "Interview not found")
+    session = _session_or_404(db, interview_id, user_id)
 
     ext = file.filename.rsplit(".", 1)[-1] if "." in file.filename else "webm"
     filename = f"{interview_id}.{ext}"
@@ -275,6 +277,7 @@ async def upload_video(
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(
                 f"{EVALUATION_SERVICE_URL}/evaluation/start",
+                headers=INTERNAL_HEADERS,
                 json={
                     "interview_id":     str(session.id),
                     "video_path":       video_storage_path,
@@ -313,18 +316,10 @@ async def save_transcripts(
     interview_id: str,
     data: dict,
     db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
 ):
     """Save browser-captured per-question transcripts (from Web Speech API)."""
-    try:
-        iid = uuid.UUID(interview_id)
-    except ValueError:
-        raise HTTPException(400, "Invalid interview_id")
-
-    session = db.query(models.InterviewSession).filter(
-        models.InterviewSession.id == iid
-    ).first()
-    if not session:
-        raise HTTPException(404, "Interview not found")
+    session = _session_or_404(db, interview_id, user_id)
 
     transcripts = data.get("transcripts", {})
     saved = 0
@@ -349,17 +344,10 @@ def patch_evaluation(
     interview_id: str,
     patch: EvaluationPatch,
     db: Session = Depends(get_db),
+    _: None = Depends(require_internal),
 ):
-    try:
-        iid = uuid.UUID(interview_id)
-    except ValueError:
-        raise HTTPException(400, "Invalid interview_id")
-
-    session = db.query(models.InterviewSession).filter(
-        models.InterviewSession.id == iid
-    ).first()
-    if not session:
-        raise HTTPException(404, "Interview not found")
+    session = _session_or_404(db, interview_id, internal=True)
+    iid = session.id
 
     if patch.overall_score is not None:
         session.overall_score = patch.overall_score

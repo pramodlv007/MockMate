@@ -1,14 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { endpoints, type InterviewSession } from '../api';
-import axios from 'axios';
 import {
     Video, VideoOff, Mic, MicOff, PhoneOff, Clock,
     ChevronRight, AlertCircle, CheckCircle, MessageSquare,
     Users, Bot, Sparkles
 } from 'lucide-react';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 type ThemeKey = 'mockmate' | 'zoom' | 'meet' | 'skype';
 
@@ -225,15 +223,11 @@ export const InterviewRoom = () => {
         if (blob.size < 1000) { navigate(`/results/${id}`); return; }
         try {
             if (id) {
-                await endpoints.uploadVideo(id, blob);
-                const token = localStorage.getItem('token');
+                // Before the upload: the upload starts evaluation, which reads these transcripts.
                 if (Object.keys(questionTranscripts).length > 0) {
-                    try {
-                        await axios.post(`${API_URL}/interviews/${id}/transcripts`,
-                            { transcripts: questionTranscripts },
-                            { headers: { Authorization: `Bearer ${token}` } });
-                    } catch (_) {}
+                    try { await endpoints.saveTranscripts(id, questionTranscripts); } catch { /* evaluation falls back to the video transcript */ }
                 }
+                await endpoints.uploadVideo(id, blob);
             }
             navigate(`/results/${id}`);
         } catch (err: any) {

@@ -6,7 +6,8 @@ deterministic composite scoring → synthesis LLM call for language output.
 import os, json, re, base64, httpx
 from pathlib import Path
 from typing import Optional, List
-from fastapi import FastAPI, BackgroundTasks, HTTPException, Request
+from fastapi import FastAPI, BackgroundTasks, HTTPException, Request, Depends
+from common.auth import INTERNAL_HEADERS, require_internal
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -547,7 +548,7 @@ def _empty_result(reason: str) -> dict:
 # --- Background Evaluation Task -----------------------------------------------
 async def _patch_interview(interview_id: str, body: dict):
     async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.patch(f"{INTERVIEW_SERVICE_URL}/{interview_id}/evaluation", json=body)
+        resp = await client.patch(f"{INTERVIEW_SERVICE_URL}/{interview_id}/evaluation", json=body, headers=INTERNAL_HEADERS)
         resp.raise_for_status()
 
 
@@ -584,7 +585,7 @@ async def _evaluate(req: EvaluateRequest):
         pre_segmented = False
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(f"{INTERVIEW_SERVICE_URL}/{req.interview_id}")
+                resp = await client.get(f"{INTERVIEW_SERVICE_URL}/{req.interview_id}", headers=INTERNAL_HEADERS)
                 if resp.status_code == 200:
                     session_data = resp.json()
                     qs = session_data.get("questions", [])
@@ -692,7 +693,8 @@ def health():
 
 @app.post("/evaluation/start", response_model=EvaluateResponse)
 @limiter.limit("3/hour")
-async def start_evaluation(request: Request, req: EvaluateRequest, background_tasks: BackgroundTasks):
+async def start_evaluation(request: Request, req: EvaluateRequest, background_tasks: BackgroundTasks,
+                           _: None = Depends(require_internal)):
     if not req.video_path:
         raise HTTPException(status_code=400, detail="video_path is required.")
     print(f"[EvalService] Evaluation queued for interview_id={req.interview_id}")

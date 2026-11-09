@@ -45,3 +45,39 @@ def test_failed_evaluation_trigger_marks_session_error(client, make_session, mon
     r = client.post(f"/{sid}/upload", files={"file": ("v.webm", b"data", "video/webm")}, headers=auth(user))
 
     assert r.json()["status"] == "error"
+
+
+# ── Auth / ownership ─────────────────────────────────────────────────────────
+def test_user_cannot_read_another_users_interview(client, make_session):
+    alice, bob = uuid.uuid4(), uuid.uuid4()
+    sid = make_session(alice)
+    assert client.get(f"/{sid}", headers=auth(alice)).status_code == 200
+    assert client.get(f"/{sid}", headers=auth(bob)).status_code == 404
+    assert client.post(f"/{sid}/transcripts", json={"transcripts": {"0": "hi"}}, headers=auth(bob)).status_code == 404
+    assert client.post(f"/{sid}/upload", files={"file": ("v.webm", b"x")}, headers=auth(bob)).status_code == 404
+
+
+def test_x_user_id_header_is_ignored(client, make_session):
+    alice = uuid.uuid4()
+    sid = make_session(alice)
+    assert client.get(f"/{sid}", headers={"x-user-id": str(alice)}).status_code == 401
+    assert client.get("/user/me", headers={"x-user-id": str(alice)}).status_code == 401
+
+
+def test_user_list_only_for_self(client, make_session):
+    alice, bob = uuid.uuid4(), uuid.uuid4()
+    make_session(alice)
+    assert len(client.get("/user/me", headers=auth(alice)).json()) >= 1
+    assert client.get(f"/user/{alice}", headers=auth(alice)).status_code == 200
+    assert client.get(f"/user/{alice}", headers=auth(bob)).status_code == 403
+
+
+def test_evaluation_patch_requires_internal_token(client, make_session):
+    alice = uuid.uuid4()
+    sid = make_session(alice)
+    body = {"status": "evaluated", "overall_score": 99}
+    assert client.patch(f"/{sid}/evaluation", json=body, headers=auth(alice)).status_code == 403
+    assert client.patch(f"/{sid}/evaluation", json=body, headers={"X-Internal-Token": "wrong"}).status_code == 403
+    assert client.patch(f"/{sid}/evaluation", json=body, headers={"X-Internal-Token": "test-internal-token"}).status_code == 200
+    # internal callers (evaluation service) may read any session
+    assert client.get(f"/{sid}", headers={"X-Internal-Token": "test-internal-token"}).status_code == 200
