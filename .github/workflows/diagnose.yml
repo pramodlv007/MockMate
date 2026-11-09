@@ -1,0 +1,66 @@
+# Read-only health report for the EC2 backend. Changes nothing on the server.
+# Runs when this file changes, or by hand: Actions → "Diagnose EC2" → Run workflow.
+# The repo is public, so its logs are too: only state, masked errors and .env key NAMES are printed.
+name: Diagnose EC2
+
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/diagnose.yml']
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/ec2.pem
+          chmod 600 ~/.ssh/ec2.pem
+
+      - name: Server report
+        run: |
+          ssh -i ~/.ssh/ec2.pem -o StrictHostKeyChecking=no -o ConnectTimeout=20 \
+              ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} bash -s << 'ENDSSH'
+          mask() {
+            sed -E -e 's#(postgres(ql)?(\+[a-z0-9]+)?://)[^@[:space:]]+@#\1***@#g' \
+                   -e 's/postgres\.[a-z0-9]{15,}/postgres.***/g' \
+                   -e 's/[a-z0-9]{20}\.supabase\.co/***.supabase.co/g' \
+                   -e 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/***@***/g' \
+                   -e 's/((password|user|key|token|secret)[a-z_]*[=:] *)[^[:space:],]+/\1***/Ig'
+          }
+
+          echo "== machine"
+          echo "booted: $(uptime -s)   load: $(cut -d' ' -f1-3 /proc/loadavg)"
+          df -h / | tail -1
+          free -m | sed -n 2p
+
+          echo; echo "== services (state / starts on boot)"
+          for s in docker nginx; do echo "$s: $(systemctl is-active $s) / $(systemctl is-enabled $s 2>/dev/null)"; done
+          echo "listening:"; sudo ss -ltn | awk 'NR>1 {print "  " $4}' | grep -E ':(80|443|8000)$'
+
+          echo; echo "== containers"
+          docker ps -a --format '{{.Names}}  {{.Image}}  {{.Status}}'
+
+          echo; echo "== mockmate container state"
+          docker inspect mockmate --format 'status={{.State.Status}} exit={{.State.ExitCode}} restarts={{.RestartCount}} oom={{.State.OOMKilled}} started={{.State.StartedAt}} finished={{.State.FinishedAt}} error={{.State.Error}}'
+
+          echo; echo "== .env setting names (values not shown)"
+          grep -oE '^[A-Z_][A-Z0-9_]*=' ~/MockMate/.env | tr -d '=' | sort | tr '\n' ' '; echo
+
+          echo; echo "== last log lines (masked, request lines removed)"
+          docker logs mockmate --tail 150 2>&1 | grep -vE 'HTTP/[0-9.]+" [0-9]{3}' | tail -40 | mask
+
+          echo; echo "== database connection test (throwaway container, SELECT 1)"
+          IMG=$(docker inspect --format '{{.Config.Image}}' mockmate 2>/dev/null || echo mockmate)
+          timeout 60 docker run --rm --env-file ~/MockMate/.env "$IMG" python -c '
+          from sqlalchemy import text
+          from common.database import engine
+          try:
+              with engine.connect() as c:
+                  c.execute(text("select 1"))
+              print("DB CONNECT: OK")
+          except Exception as e:
+              print("DB CONNECT: FAILED -", type(e).__name__, "-", " ".join(str(e).split())[:400])
+          ' 2>&1 | tail -3 | mask
+          ENDSSH
