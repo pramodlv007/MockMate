@@ -1,9 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { endpoints, type InterviewSession } from '../api';
-import { Calendar, ChevronRight, Play, Trophy, Activity } from 'lucide-react';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+import { Calendar, ChevronRight, Trash2, Trophy, Activity } from 'lucide-react';
 
 export const History = () => {
     const navigate = useNavigate();
@@ -14,6 +12,16 @@ export const History = () => {
             setInterviews(res.data);
         });
     }, []);
+
+    const handleDelete = async (id: string) => {
+        if (!confirm('Delete this interview and its recording permanently? This cannot be undone.')) return;
+        try {
+            await endpoints.deleteInterview(id);
+            setInterviews(list => list.filter(i => i.id !== id));
+        } catch (err: any) {
+            alert(err?.response?.data?.detail ?? 'Could not delete the interview. Please try again.');
+        }
+    };
 
     return (
         <div className="max-w-4xl mx-auto space-y-8 animate-fade-in">
@@ -80,21 +88,18 @@ export const History = () => {
                             </div>
 
                             <div className="flex items-center gap-3 mt-4 pt-4 border-t border-slate-700/50">
-                                {interview.video_storage_path && (
-                                    <a
-                                        href={`${API_URL}/${interview.video_storage_path}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="btn-secondary text-sm py-2"
-                                    >
-                                        <Play size={16} /> Watch Recording
-                                    </a>
-                                )}
                                 <button
                                     onClick={() => navigate(`/results/${interview.id}`)}
                                     className="btn-primary text-sm py-2"
                                 >
                                     View Results <ChevronRight size={16} />
+                                </button>
+                                <button
+                                    onClick={() => handleDelete(interview.id)}
+                                    className="btn-secondary text-sm py-2 ml-auto text-red-400"
+                                    aria-label={`Delete interview with ${interview.company_name}`}
+                                >
+                                    <Trash2 size={16} /> Delete
                                 </button>
                             </div>
                         </div>

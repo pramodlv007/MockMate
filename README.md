@@ -207,6 +207,26 @@ GitHub Actions
 
 ---
 
+## Privacy & Data Retention
+
+- **Consent:** users must tick a consent box on the interview setup page before anything is recorded.
+- **Deletion:** `DELETE /interviews/{id}` (the **Delete** button in History) removes the S3 recording, then the
+  session and its questions from the database. Only the owner can delete.
+- **Retention:** recordings in S3 expire after 30 days. Apply this lifecycle rule once per bucket. It is not set by
+  the app or CI, so the consent text is only true once you have run it:
+
+```bash
+aws s3api put-bucket-lifecycle-configuration --bucket mockmate-videos-pramod \
+  --lifecycle-configuration '{"Rules":[{"ID":"expire-recordings-30d","Status":"Enabled",
+    "Filter":{"Prefix":"videos/"},"Expiration":{"Days":30}}]}'
+# verify
+aws s3api get-bucket-lifecycle-configuration --bucket mockmate-videos-pramod
+```
+
+  Expiry removes the video only; the session's transcript and scores stay until the user deletes the interview.
+- **Third parties:** recordings are uploaded to Google Gemini for transcription and body-language analysis;
+  transcripts (text only) may go to DeepSeek as a fallback.
+
 ## Tech Stack
 
 ### Backend

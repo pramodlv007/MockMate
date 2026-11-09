@@ -257,6 +257,8 @@ export const endpoints = {
         api.post<InterviewSession>('/interviews/', data),
     getInterview: (id: string | number) =>
         api.get<InterviewSession>(`/interviews/${id}`),
+    deleteInterview: (id: string | number) =>
+        api.delete(`/interviews/${id}`),
     getUserInterviews: () =>
         api.get<InterviewSession[]>(`/interviews/user/me`),
     saveTranscripts: (id: string | number, transcripts: Record<number, string>) =>

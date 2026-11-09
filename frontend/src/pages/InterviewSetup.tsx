@@ -180,6 +180,15 @@ export const InterviewSetup = () => {
                     </div>
                 </div>
 
+                <label className="card flex items-start gap-3 cursor-pointer">
+                    <input type="checkbox" required className="mt-1 w-5 h-5 accent-emerald-500 flex-shrink-0" />
+                    <span className="text-sm text-slate-300">
+                        I consent to MockMate recording my camera and microphone during this interview, and to the
+                        recording being sent to Google Gemini for transcription and feedback. Recordings are kept for
+                        up to 30 days, and I can delete this interview and its recording at any time from History.
+                    </span>
+                </label>
+
                 <button
                     type="submit"
                     disabled={loading}

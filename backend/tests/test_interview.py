@@ -1,6 +1,7 @@
 import uuid
 from unittest.mock import MagicMock
 import httpx
+from common import database
 from services.interview import main as interview_main
 from tests.conftest import auth
 
@@ -102,3 +103,34 @@ def test_daily_interview_cap(client, make_session, monkeypatch):
     body = {"company_name": "Acme", "job_description": "jd", "questions_count": 2}
     codes = [client.post("/", json=body, headers=auth(carol)).status_code for _ in range(3)]
     assert codes == [200, 200, 429]
+
+
+# ── Deletion ─────────────────────────────────────────────────────────────────
+def test_delete_removes_rows_and_s3_object(client, make_session, monkeypatch):
+    alice, bob = uuid.uuid4(), uuid.uuid4()
+    sid = make_session(alice)
+    db = database.SessionLocal()
+    db.get(interview_main.models.InterviewSession, sid).video_storage_path = f"s3://bucket/videos/{sid}.webm"
+    db.commit(); db.close()
+    s3 = MagicMock()
+    monkeypatch.setattr(interview_main, "s3_client", s3)
+
+    assert client.delete(f"/{sid}", headers=auth(bob)).status_code == 404       # not the owner
+    s3.delete_object.assert_not_called()
+    assert client.delete(f"/{sid}", headers=auth(alice)).status_code == 204
+    s3.delete_object.assert_called_once_with(Bucket="bucket", Key=f"videos/{sid}.webm")
+    assert client.get(f"/{sid}", headers=auth(alice)).status_code == 404
+    db = database.SessionLocal()
+    assert db.query(interview_main.models.Question).filter_by(session_id=sid).count() == 0
+    db.close()
+
+
+def test_delete_keeps_rows_if_storage_unavailable(client, make_session, monkeypatch):
+    alice = uuid.uuid4()
+    sid = make_session(alice)
+    db = database.SessionLocal()
+    db.get(interview_main.models.InterviewSession, sid).video_storage_path = "s3://bucket/videos/x.webm"
+    db.commit(); db.close()
+    monkeypatch.setattr(interview_main, "s3_client", None)
+    assert client.delete(f"/{sid}", headers=auth(alice)).status_code == 503
+    assert client.get(f"/{sid}", headers=auth(alice)).status_code == 200

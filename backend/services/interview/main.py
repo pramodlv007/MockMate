@@ -329,6 +329,27 @@ async def upload_video(
     }
 
 
+# ─── Delete Interview (user data deletion) ───────────────────────────────────
+@app.delete("/{interview_id}", status_code=204)
+def delete_interview(
+    interview_id: str,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Delete the recording first, then the rows; if storage deletion fails, keep the rows so the user can retry."""
+    session = _session_or_404(db, interview_id, user_id)
+    path = session.video_storage_path
+    if path and path.startswith("s3://"):
+        if not s3_client:
+            raise HTTPException(503, "Recording storage unavailable; try again later")
+        bucket, key = path[5:].split("/", 1)
+        s3_client.delete_object(Bucket=bucket, Key=key)
+    elif path:
+        Path(path).unlink(missing_ok=True)
+    db.delete(session)  # questions cascade (delete-orphan)
+    db.commit()
+
+
 # ─── Save Browser-Captured Per-Question Transcripts ──────────────────────────────
 @app.post("/{interview_id}/transcripts")
 async def save_transcripts(
