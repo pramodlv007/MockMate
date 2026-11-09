@@ -273,7 +273,7 @@ async def upload_video(
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            await client.post(
+            resp = await client.post(
                 f"{EVALUATION_SERVICE_URL}/evaluation/start",
                 json={
                     "interview_id":     str(session.id),
@@ -291,14 +291,16 @@ async def upload_video(
                     "education":        eval_education,
                 },
             )
+            resp.raise_for_status()
         session.status = "evaluating"
-        db.commit()
         print(f"[Interview] Evaluation triggered for {interview_id}")
     except Exception as e:
-        print(f"[Interview] Could not trigger evaluation: {e}")
+        session.status = "error"
+        print(f"[Interview] Could not trigger evaluation: {e!r}")
+    db.commit()
 
     return {
-        "message": "Video uploaded, evaluation started",
+        "message": "Video uploaded, evaluation started" if session.status == "evaluating" else "Video uploaded, evaluation could not start",
         "interview_id": interview_id,
         "size_bytes": len(contents),
         "status": session.status,

@@ -545,7 +545,25 @@ def _empty_result(reason: str) -> dict:
 
 
 # --- Background Evaluation Task -----------------------------------------------
+async def _patch_interview(interview_id: str, body: dict):
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.patch(f"{INTERVIEW_SERVICE_URL}/{interview_id}/evaluation", json=body)
+        resp.raise_for_status()
+
+
 async def _run_evaluation(req: EvaluateRequest):
+    """Any failure marks the session "error" so the user isn't left on a spinner forever."""
+    try:
+        await _evaluate(req)
+    except Exception as e:
+        print(f"[EvalService] ✗ Evaluation failed for {req.interview_id}: {e!r}")
+        try:
+            await _patch_interview(req.interview_id, {"status": "error"})
+        except Exception as e2:
+            print(f"[EvalService] ✗ Could not mark {req.interview_id} as error: {e2!r}")
+
+
+async def _evaluate(req: EvaluateRequest):
     print(f"\n[EvalService] === Starting evaluation for {req.interview_id} ===")
 
     # Step 1: Transcribe
@@ -652,22 +670,15 @@ async def _run_evaluation(req: EvaluateRequest):
                 }),
             })
 
-    # Patch interview session
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            await client.patch(
-                f"{INTERVIEW_SERVICE_URL}/{req.interview_id}/evaluation",
-                json={
-                    "overall_score": overall_score,
-                    "feedback_summary": json.dumps(feedback),
-                    "status": "evaluated",
-                    "transcript": transcript,
-                    "per_question_data": per_question_data,
-                },
-            )
-        print(f"[EvalService] ✓ Updated interview {req.interview_id}")
-    except Exception as e:
-        print(f"[EvalService] ✗ Failed to update: {e}")
+    # Patch interview session (raises on failure → _run_evaluation marks it "error")
+    await _patch_interview(req.interview_id, {
+        "overall_score": overall_score,
+        "feedback_summary": json.dumps(feedback),
+        "status": "evaluated",
+        "transcript": transcript,
+        "per_question_data": per_question_data,
+    })
+    print(f"[EvalService] ✓ Updated interview {req.interview_id}")
 
 
 # --- Endpoints -----------------------------------------------------------------

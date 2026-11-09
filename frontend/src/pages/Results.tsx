@@ -196,13 +196,21 @@ export const Results = () => {
         };
         fetch();
         const iv = setInterval(() => {
-            if (!session || (session.status !== 'evaluated' && session.status !== 'completed')) fetch();
+            if (!session || !['evaluated', 'completed', 'error'].includes(session.status)) fetch();
         }, 3000);
         return () => clearInterval(iv);
     }, [id, session?.status]);
 
     if (!session) return (
         <div className="text-center pt-20 text-emerald-400 animate-pulse text-lg">Loading Results...</div>
+    );
+
+    if (session.status === 'error') return (
+        <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 text-center animate-fade-in">
+            <h2 className="text-2xl font-bold text-white">We couldn&apos;t evaluate this interview</h2>
+            <p className="text-slate-400 max-w-md">Something went wrong while analysing your recording. Your video was saved; please try another interview or contact support.</p>
+            <button onClick={() => navigate('/history')} className="btn-secondary">Back to History</button>
+        </div>
     );
 
     if (session.status === 'evaluating' || session.status === 'generated' || session.status === 'created') {
