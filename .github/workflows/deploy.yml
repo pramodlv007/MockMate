@@ -163,12 +163,20 @@ jobs:
           fi
           sudo nginx -t
 
+          # 8 GB disk can't fit the new image next to old leftovers; images the current container uses are kept, so rollback still works
+          docker image prune -af >/dev/null
+          docker builder prune -af >/dev/null 2>&1 || true
+
           echo "==> Pulling $IMAGE"
           docker pull "$IMAGE"
           docker logout ghcr.io
 
           PREV=$(docker inspect --format '{{.Config.Image}}' mockmate 2>/dev/null || true)
-          run() { docker run -d --name mockmate --env-file .env -p 8000:8000 --restart unless-stopped "$1"; }
+          # backend/.env holds the DB, Gemini and JWT settings; old server-built images had it baked in at /app/.env.
+          # Mounting it at the same path makes every module resolve settings exactly as the old deploy did.
+          ENV_MOUNT=""
+          if [ -f backend/.env ]; then ENV_MOUNT="-v $HOME/MockMate/backend/.env:/app/.env:ro"; fi
+          run() { docker run -d --name mockmate --env-file .env $ENV_MOUNT -p 8000:8000 --restart unless-stopped "$1"; }
           healthy() {
             for i in $(seq 1 15); do
               curl -sf localhost:8000/health | grep -q '"ok"' && return 0
