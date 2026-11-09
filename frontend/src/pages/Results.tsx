@@ -631,7 +631,9 @@ export const Results = () => {
                                                 ? <><CheckCircle size={11} /> Good pace</>
                                                 : speechMetrics.pace_assessment === 'too_fast'
                                                     ? <><TrendingUp size={11} /> Too fast</>
-                                                    : <><TrendingDown size={11} /> Too slow</>
+                                                    : speechMetrics.pace_assessment === 'too_slow'
+                                                        ? <><TrendingDown size={11} /> Too slow</>
+                                                        : <>Pace unknown</>
                                             }
                                         </div>
                                     </div>

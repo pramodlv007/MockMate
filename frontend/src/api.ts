@@ -139,7 +139,7 @@ export interface PerQuestionResult {
 }
 
 export interface SpeechMetrics {
-    words_per_minute: number;
+    words_per_minute: number | null;
     pace_assessment: string;
     filler_word_count: number;
     filler_ratio_percent: number;

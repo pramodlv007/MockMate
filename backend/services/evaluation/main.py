@@ -250,23 +250,49 @@ def _analyze_frames(video_path: str) -> dict:
 
 
 # --- Speech Metrics (deterministic, no AI) ------------------------------------
-FILLER_WORDS = ["um", "uh", "like", "you know", "basically", "literally", "actually", "so", "right"]
+# Unambiguous fillers only: "so", "right" and "actually" are too often real words to count.
+# shortcut: "like" is kept although "I'd like to" is a false positive; needs POS tagging to do properly.
+FILLER_WORDS = ["um", "uh", "like", "you know", "basically", "literally"]
+_FILLER_RES = {fw: re.compile(r"\b" + r"\s+".join(map(re.escape, fw.split())) + r"\b", re.IGNORECASE)
+               for fw in FILLER_WORDS}
 
-def _speech_metrics(transcript: str, duration_seconds: float = 300) -> dict:
-    words = transcript.lower().split()
-    word_count = len(words)
-    minutes = max(duration_seconds / 60, 0.1)
-    wpm = round(word_count / minutes, 1)
+
+def _video_duration(path: str) -> Optional[float]:
+    """Seconds of media, or None if unknown. Browser MediaRecorder WebM has no duration header,
+    so decode the audio track with moviepy's bundled ffmpeg and take the last timestamp."""
+    try:
+        import subprocess, imageio_ffmpeg
+        err = subprocess.run(
+            [imageio_ffmpeg.get_ffmpeg_exe(), "-nostdin", "-i", path, "-vn", "-f", "null", "-"],
+            capture_output=True, text=True, timeout=300,
+        ).stderr
+        stamps = re.findall(r"time=(\d+):(\d+):(\d+(?:\.\d+)?)", err)
+        if stamps:
+            h, m, sec = stamps[-1]
+            seconds = int(h) * 3600 + int(m) * 60 + float(sec)
+            return seconds if seconds > 0 else None
+    except Exception as e:
+        print(f"[EvalService] Could not read duration of {path}: {e!r}")
+    return None
+
+
+def _speech_metrics(transcript: str, duration_seconds: Optional[float]) -> dict:
+    word_count = len(transcript.split())
+    if duration_seconds:
+        wpm = round(word_count / max(duration_seconds / 60, 0.1), 1)
+        pace = "optimal" if 100 <= wpm <= 180 else ("too_slow" if wpm < 100 else "too_fast")
+    else:
+        wpm, pace = None, "unknown"
     filler_items = []
     total_fillers = 0
-    for fw in FILLER_WORDS:
-        cnt = transcript.lower().count(fw)
+    for fw, rx in _FILLER_RES.items():
+        cnt = len(rx.findall(transcript))
         if cnt:
             filler_items.append({"word": fw, "count": cnt})
             total_fillers += cnt
-    pace = "optimal" if 100 <= wpm <= 180 else ("too_slow" if wpm < 100 else "too_fast")
     return {
         "word_count": word_count,
+        "duration_seconds": round(duration_seconds, 1) if duration_seconds else None,
         "words_per_minute": wpm,
         "pace_assessment": pace,
         "filler_word_count": total_fillers,
@@ -390,7 +416,7 @@ def _compute_composite_score(per_question_evals: list, speech: dict, vision: dic
     content_score = sum(q_scores) / len(q_scores) if q_scores else 0
 
     # Communication (25% weight)
-    wpm = speech.get("words_per_minute", 0)
+    wpm = speech.get("words_per_minute") or 0  # None when duration is unknown → no pace penalty
     filler_pct = speech.get("filler_ratio_percent", 0)
     comm_score = 100.0
     comm_penalties = []
@@ -463,7 +489,7 @@ COMPUTED SCORES:
 PER-QUESTION RESULTS:
 {json.dumps([{{"q": pq.get("question","")[:80], "score": pq.get("overall",50), "category": pq.get("category",""), "gap": pq.get("what_was_missing","")[:100]}} for pq in per_question_evals], indent=2)}
 
-SPEECH: {speech.get('words_per_minute',0)} WPM, {speech.get('filler_word_count',0)} fillers
+SPEECH: {speech.get('words_per_minute') or 'unknown'} WPM, {speech.get('filler_word_count',0)} fillers
 COMPANY: {company}
 RESUME SKILLS: {skills[:300]}
 JD EXCERPT: {jd[:400]}
@@ -561,14 +587,19 @@ async def _run_evaluation(req: EvaluateRequest):
 async def _evaluate(req: EvaluateRequest):
     print(f"\n[EvalService] === Starting evaluation for {req.interview_id} ===")
 
-    # Step 1: Transcribe
-    transcript = _transcribe(req.video_path)
+    local_path = _ensure_local(req.video_path)  # one S3 download for all stages
+    try:
+        # Step 1: Transcribe
+        transcript = _transcribe(local_path)
 
-    # Step 2: Vision analysis
-    vision = _analyze_frames(req.video_path)
+        # Step 2: Vision analysis
+        vision = _analyze_frames(local_path)
 
-    # Step 3: Speech metrics (no AI)
-    speech = _speech_metrics(transcript)
+        # Step 3: Speech metrics (no AI)
+        speech = _speech_metrics(transcript, _video_duration(local_path))
+    finally:
+        if local_path != req.video_path:
+            Path(local_path).unlink(missing_ok=True)
 
     if len(transcript.strip()) < 30:
         feedback = _empty_result("No meaningful speech detected. Ensure microphone was active.")
