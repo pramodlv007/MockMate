@@ -53,6 +53,9 @@ jobs:
           grep -oE '^[A-Z_][A-Z0-9_]*=' ~/MockMate/.env | tr -d '=' | sort | tr '\n' ' '; echo
           echo "running container was started with:"
           docker inspect mockmate --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -oE '^[A-Z_][A-Z0-9_]*' | grep -vE '^(PATH|LANG|GPG_KEY|PYTHON_.*|HOME|HOSTNAME)$' | sort | tr '\n' ' '; echo
+          # old deploys built the image on this server, so an untracked backend/.env could be baked in
+          echo "~/MockMate/backend/.env on disk: $(test -f ~/MockMate/backend/.env && grep -oE '^[A-Z_][A-Z0-9_]*=' ~/MockMate/backend/.env | tr -d '=' | sort | tr '\n' ' ' || echo 'not present')"
+          echo "/app/.env baked into the running image: $(docker run --rm --entrypoint sh "$(docker inspect --format '{{.Config.Image}}' mockmate)" -c 'test -f /app/.env && grep -oE "^[A-Z_][A-Z0-9_]*=" /app/.env | tr -d = | sort | tr "\n" " " || echo not present')"
 
           echo; echo "== last log lines (masked, request lines removed)"
           docker logs mockmate --tail 150 2>&1 | grep -vE 'HTTP/[0-9.]+" [0-9]{3}' | tail -40 | mask
