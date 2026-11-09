@@ -26,6 +26,7 @@ jobs:
             sed -E -e 's#(postgres(ql)?(\+[a-z0-9]+)?://)[^@[:space:]]+@#\1***@#g' \
                    -e 's/postgres\.[a-z0-9]{15,}/postgres.***/g' \
                    -e 's/[a-z0-9]{20}\.supabase\.co/***.supabase.co/g' \
+                   -e 's/[a-z0-9.-]+\.rds\.amazonaws\.com/***.rds.amazonaws.com/g' \
                    -e 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/***@***/g' \
                    -e 's/((password|user|key|token|secret)[a-z_]*[=:] *)[^[:space:],]+/\1***/Ig'
           }
@@ -45,8 +46,13 @@ jobs:
           echo; echo "== mockmate container state"
           docker inspect mockmate --format 'status={{.State.Status}} exit={{.State.ExitCode}} restarts={{.RestartCount}} oom={{.State.OOMKilled}} started={{.State.StartedAt}} finished={{.State.FinishedAt}} error={{.State.Error}}'
 
-          echo; echo "== .env setting names (values not shown)"
+          echo; echo "== docker disk use"
+          docker system df
+
+          echo; echo "== .env setting names (values not shown), file last changed $(stat -c %y ~/MockMate/.env | cut -d. -f1)"
           grep -oE '^[A-Z_][A-Z0-9_]*=' ~/MockMate/.env | tr -d '=' | sort | tr '\n' ' '; echo
+          echo "running container was started with:"
+          docker inspect mockmate --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -oE '^[A-Z_][A-Z0-9_]*' | grep -vE '^(PATH|LANG|GPG_KEY|PYTHON_.*|HOME|HOSTNAME)$' | sort | tr '\n' ' '; echo
 
           echo; echo "== last log lines (masked, request lines removed)"
           docker logs mockmate --tail 150 2>&1 | grep -vE 'HTTP/[0-9.]+" [0-9]{3}' | tail -40 | mask
@@ -62,5 +68,26 @@ jobs:
               print("DB CONNECT: OK")
           except Exception as e:
               print("DB CONNECT: FAILED -", type(e).__name__, "-", " ".join(str(e).split())[:400])
+          ' 2>&1 | tail -3 | mask
+
+          echo; echo "== DATABASE_URL from .env (the code does not read it yet), SELECT 1"
+          timeout 60 docker run --rm --env-file ~/MockMate/.env "$IMG" python -c '
+          import os
+          from sqlalchemy import create_engine, text
+          from sqlalchemy.engine import make_url
+          raw = os.getenv("DATABASE_URL")
+          if not raw:
+              raise SystemExit("DATABASE_URL not set")
+          u = make_url(raw).set(drivername="postgresql+psycopg2")
+          h = u.host or ""
+          kind = ("supabase pooler" if "pooler.supabase.com" in h else "supabase direct" if h.endswith("supabase.co")
+                  else "aws rds" if "rds.amazonaws.com" in h else "localhost" if h in ("localhost", "127.0.0.1") else "other")
+          print("host kind:", kind, "| port:", u.port, "| db:", u.database, "| sslmode in url:", "sslmode" in u.query)
+          try:
+              with create_engine(u, connect_args={"connect_timeout": 15}).connect() as c:
+                  c.execute(text("select 1"))
+              print("DATABASE_URL CONNECT: OK")
+          except Exception as e:
+              print("DATABASE_URL CONNECT: FAILED -", type(e).__name__, "-", " ".join(str(e).split())[:400])
           ' 2>&1 | tail -3 | mask
           ENDSSH
