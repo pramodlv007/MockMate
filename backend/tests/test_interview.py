@@ -81,3 +81,24 @@ def test_evaluation_patch_requires_internal_token(client, make_session):
     assert client.patch(f"/{sid}/evaluation", json=body, headers={"X-Internal-Token": "test-internal-token"}).status_code == 200
     # internal callers (evaluation service) may read any session
     assert client.get(f"/{sid}", headers={"X-Internal-Token": "test-internal-token"}).status_code == 200
+
+
+# ── Rate limits ──────────────────────────────────────────────────────────────
+def test_upload_limit_is_per_user(client, make_session, monkeypatch, tmp_path):
+    monkeypatch.setattr(interview_main, "UPLOAD_DIR", tmp_path)
+    _capture_post(monkeypatch)
+    alice, bob = uuid.uuid4(), uuid.uuid4()
+    sid = make_session(alice)
+    up = lambda u, s: client.post(f"/{s}/upload", files={"file": ("v.webm", b"x")}, headers=auth(u)).status_code
+    assert [up(alice, sid) for _ in range(3)] == [200, 200, 200]
+    assert up(alice, sid) == 429                     # default UPLOAD_RATE_LIMIT is 3/hour
+    assert up(bob, make_session(bob)) == 200         # other users are unaffected
+
+
+def test_daily_interview_cap(client, make_session, monkeypatch):
+    monkeypatch.setattr(interview_main, "MAX_INTERVIEWS_PER_DAY", 2)
+    _capture_post(monkeypatch, code=500)             # question service down → fallback questions
+    carol = uuid.uuid4()
+    body = {"company_name": "Acme", "job_description": "jd", "questions_count": 2}
+    codes = [client.post("/", json=body, headers=auth(carol)).status_code for _ in range(3)]
+    assert codes == [200, 200, 429]

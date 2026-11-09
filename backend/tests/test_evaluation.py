@@ -22,3 +22,10 @@ def test_start_evaluation_requires_internal_token(monkeypatch):
     body = {"interview_id": "abc", "video_path": "x.webm", "company": "Acme", "job_description": "jd"}
     assert c.post("/evaluation/start", json=body).status_code == 403
     assert c.post("/evaluation/start", json=body, headers={"X-Internal-Token": "test-internal-token"}).status_code == 200
+
+
+def test_question_generate_requires_internal_token():
+    from fastapi.testclient import TestClient
+    from services.question import main as q_main
+    body = {"company": "Acme", "target_role": "SWE", "job_description": "jd"}
+    assert TestClient(q_main.app).post("/generate", json=body).status_code == 403

@@ -8,9 +8,6 @@ from pathlib import Path
 from typing import Optional, List
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Request, Depends
 from common.auth import INTERNAL_HEADERS, require_internal
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
 from pydantic import BaseModel
 from dotenv import dotenv_values
 
@@ -44,10 +41,7 @@ if DEEPSEEK_API_KEY:
     except Exception as e:
         print(f"[EvalService] DeepSeek init error: {e}")
 
-limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="MockMate Evaluation Service", version="5.0.0")
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 # --- Schemas --------------------------------------------------------------------
@@ -691,8 +685,8 @@ def health():
     }
 
 
+# Internal only; the per-user limit lives on the user-facing upload endpoint (interview service).
 @app.post("/evaluation/start", response_model=EvaluateResponse)
-@limiter.limit("3/hour")
 async def start_evaluation(request: Request, req: EvaluateRequest, background_tasks: BackgroundTasks,
                            _: None = Depends(require_internal)):
     if not req.video_path:

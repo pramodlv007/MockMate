@@ -23,9 +23,9 @@ export const InterviewSetup = () => {
         try {
             const { data } = await endpoints.createInterview(formData);
             navigate(`/interview/${data.id}`);
-        } catch (err) {
+        } catch (err: any) {
             console.error(err);
-            alert("Failed to start interview. Check backend connection.");
+            alert(err?.response?.data?.detail ?? "Failed to start interview. Check backend connection.");
         } finally {
             setLoading(false);
         }

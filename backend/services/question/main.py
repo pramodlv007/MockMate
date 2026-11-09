@@ -1,17 +1,10 @@
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, Depends
+from common.auth import require_internal
 from pydantic import BaseModel
 from typing import Optional
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
 from .engine import engine
 
-# ── Rate limiter: cap LLM spend — 10 generations/min per IP ──────────────────
-limiter = Limiter(key_func=get_remote_address)
-
 app = FastAPI(title="Question Service", version="3.0.0")
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 class QuestionRequest(BaseModel):
@@ -47,12 +40,12 @@ def health():
 
 
 @app.post("/generate")
-@limiter.limit("10/minute")
-async def generate(request: Request, req: QuestionRequest):
+async def generate(request: Request, req: QuestionRequest, _: None = Depends(require_internal)):
     """
     Generate tailored interview questions from the combined prompt.
     All questions are 100% LLM-generated — no predefined banks or templates.
-    Rate limited to 10 requests/minute per IP to prevent LLM cost abuse.
+    Internal only (called by the interview service); LLM spend is capped by the per-user
+    daily interview limit there.
     """
     if req.count > 15:
         raise HTTPException(status_code=400, detail="Maximum 15 questions per request.")

@@ -4,7 +4,9 @@ Manages interview sessions: create, fetch, upload video, patch evaluation result
 Calls Question Service to generate questions on session creation.
 """
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Request
-from common.auth import get_current_user_id, get_optional_user_id, is_internal, require_internal, INTERNAL_HEADERS
+from common.auth import get_current_user_id, get_optional_user_id, is_internal, require_internal, user_or_ip_key, INTERNAL_HEADERS
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
@@ -13,7 +15,7 @@ from . import models
 from .schemas import InterviewSessionOut, EvaluationPatch
 from pathlib import Path
 import httpx, uuid, os, traceback
-from datetime import datetime
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent.parent.parent / ".env")
@@ -31,7 +33,15 @@ if S3_BUCKET:
     except Exception as e:
         print(f"[Interview] S3 init error: {e}")
 
+# Per-user limits (env-configurable). Uploads trigger the expensive evaluation pipeline;
+# creation triggers question generation.
+UPLOAD_RATE_LIMIT        = os.getenv("UPLOAD_RATE_LIMIT", "3/hour")
+MAX_INTERVIEWS_PER_DAY   = int(os.getenv("MAX_INTERVIEWS_PER_DAY", "10"))
+limiter = Limiter(key_func=user_or_ip_key)
+
 app = FastAPI(title="MockMate Interview Service", version="2.0.0")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -76,6 +86,13 @@ async def create_interview(
         user_uuid = uuid.UUID(user_id_str)
     except ValueError:
         raise HTTPException(400, "Invalid user_id format")
+
+    created_today = db.query(models.InterviewSession).filter(
+        models.InterviewSession.user_id == user_uuid,
+        models.InterviewSession.created_at >= datetime.utcnow() - timedelta(days=1),
+    ).count()
+    if created_today >= MAX_INTERVIEWS_PER_DAY:
+        raise HTTPException(429, f"Daily limit reached: {MAX_INTERVIEWS_PER_DAY} interviews per 24 hours.")
 
     # Build session record
     session = models.InterviewSession(
@@ -138,7 +155,7 @@ async def create_interview(
                 "github_url":       user_github_url,
                 "user_id":          str(user_uuid),  # for cross-session deduplication
             }
-            resp = await client.post(f"{QUESTION_SERVICE_URL}/generate", json=q_payload)
+            resp = await client.post(f"{QUESTION_SERVICE_URL}/generate", json=q_payload, headers=INTERNAL_HEADERS)
             if resp.status_code == 200:
                 questions_list = resp.json().get("questions", [])
             else:
@@ -212,7 +229,9 @@ def get_interview(
 
 # ─── Upload Video ─────────────────────────────────────────────────────────────
 @app.post("/{interview_id}/upload")
+@limiter.limit(UPLOAD_RATE_LIMIT)
 async def upload_video(
+    request: Request,
     interview_id: str,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),

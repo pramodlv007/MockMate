@@ -49,3 +49,16 @@ def get_optional_user_id(token: str = Depends(oauth2_scheme)):
         return get_current_user_id(token)
     except HTTPException:
         return None
+
+
+def user_or_ip_key(request) -> str:
+    """slowapi key: the caller's user_id from the Bearer token, else client IP."""
+    auth = request.headers.get("authorization", "")
+    if auth.lower().startswith("bearer "):
+        try:
+            uid = jwt.decode(auth[7:], SECRET_KEY, algorithms=[ALGORITHM]).get("user_id")
+            if uid:
+                return f"user:{uid}"
+        except JWTError:
+            pass
+    return f"ip:{request.client.host if request.client else 'unknown'}"
