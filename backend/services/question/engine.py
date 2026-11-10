@@ -17,6 +17,7 @@ import httpx
 from pathlib import Path
 from typing import Optional
 from dotenv import dotenv_values
+from common.metrics import llm_call
 
 # ── Config ──────────────────────────────────────────────────────────────────────
 backend_dir = Path(__file__).parent.parent.parent
@@ -518,12 +519,14 @@ def _call_gemini(prompt: str, count: int) -> list[str]:
                     "thinkingConfig": {"thinkingBudget": 0},
                 },
             }
-            resp = httpx.post(
-                GEMINI_REST_URL,
-                params={"key": GOOGLE_API_KEY},
-                json=payload,
-                timeout=60.0,
-            )
+            with llm_call("gemini", "questions") as call:
+                resp = httpx.post(
+                    GEMINI_REST_URL,
+                    params={"key": GOOGLE_API_KEY},
+                    json=payload,
+                    timeout=60.0,
+                )
+                call.ok = resp.status_code == 200
             if resp.status_code != 200:
                 print(f"[QuestionEngine] Gemini HTTP {resp.status_code}: {resp.text[:300]}")
                 return []
@@ -554,13 +557,14 @@ def _call_deepseek(prompt: str, count: int) -> list[str]:
     for attempt in range(2):
         try:
             print(f"[QuestionEngine] DeepSeek deepseek-chat (attempt {attempt + 1})...")
-            resp = deepseek_client.chat.completions.create(
-                model="deepseek-chat",
-                messages=[{"role": "user", "content": prompt}],
-                response_format={"type": "json_object"},
-                temperature=0.8,
-                max_tokens=3000,
-            )
+            with llm_call("deepseek", "questions"):
+                resp = deepseek_client.chat.completions.create(
+                    model="deepseek-chat",
+                    messages=[{"role": "user", "content": prompt}],
+                    response_format={"type": "json_object"},
+                    temperature=0.8,
+                    max_tokens=3000,
+                )
             raw_text = resp.choices[0].message.content
             questions = _parse_questions_json(raw_text) or []
             if questions and len(questions) >= count:

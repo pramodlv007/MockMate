@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from common.database import get_db, create_tables
+from common.metrics import INTERVIEWS_CREATED
 from . import models
 from .schemas import InterviewSessionOut, EvaluationPatch
 from pathlib import Path
@@ -38,7 +39,8 @@ if S3_BUCKET:
 # creation triggers question generation.
 UPLOAD_RATE_LIMIT        = os.getenv("UPLOAD_RATE_LIMIT", "3/hour")
 MAX_INTERVIEWS_PER_DAY   = int(os.getenv("MAX_INTERVIEWS_PER_DAY", "10"))
-limiter = Limiter(key_func=user_or_ip_key)
+# With REDIS_URL the counters live in Redis, so limits hold across all API replicas (HPA runs 1–3).
+limiter = Limiter(key_func=user_or_ip_key, storage_uri=os.getenv("REDIS_URL") or "memory://")
 
 app = FastAPI(title="MockMate Interview Service", version="2.0.0")
 app.state.limiter = limiter
@@ -209,6 +211,7 @@ async def create_interview(
     session.status = "generated"
     db.commit()
     db.refresh(session)
+    INTERVIEWS_CREATED.inc()
     return session
 
 

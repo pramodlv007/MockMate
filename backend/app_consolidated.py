@@ -23,6 +23,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from dotenv import dotenv_values
 from pathlib import Path
+from time import perf_counter
+from prometheus_client import make_asgi_app
+from common.metrics import HTTP_LATENCY
 import os, traceback
 
 app = FastAPI(
@@ -46,6 +49,22 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def record_latency(request: Request, call_next):
+    """Label by route template (/interviews/{interview_id}), not raw path, so UUIDs don't explode cardinality."""
+    start = perf_counter()
+    status = 500
+    try:
+        response = await call_next(request)
+        status = response.status_code
+        return response
+    finally:
+        # Mounted sub-apps write their matched route + mount prefix into this same scope dict.
+        route = getattr(request.scope.get("route"), "path", None)
+        label = request.scope.get("root_path", "") + route if route else "unmatched"
+        HTTP_LATENCY.labels(request.method, label, str(status)).observe(perf_counter() - start)
+
 
 @app.get("/health")
 def health():
@@ -82,6 +101,9 @@ from services.interview.main import app as interview_app
 from services.evaluation.main import app as evaluation_app
 from services.auth.main import app as auth_app
 from services.rubric.main import app as rubric_app
+
+# Scraped by Prometheus inside the cluster; the Ingress doesn't route /metrics, so it isn't public.
+app.mount("/metrics", make_asgi_app())
 
 # Specific prefix mounts first (order matters — more specific before catch-all)
 app.mount("/profile", profile_app)

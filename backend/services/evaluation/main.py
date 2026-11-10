@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Optional, List
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Request, Depends
 from common.auth import INTERNAL_HEADERS, require_internal
+from common.metrics import llm_call
+from . import queue
 from pydantic import BaseModel
 from dotenv import dotenv_values
 
@@ -77,7 +79,9 @@ def _llm(prompt: str, system: str = "", json_mode: bool = False) -> Optional[str
             gen_config = {"temperature": 0.4, "max_output_tokens": 4000}
             if json_mode:
                 gen_config["response_mime_type"] = "application/json"
-            response = gemini_model.generate_content(full_prompt, generation_config=gen_config)
+            with llm_call("gemini", "text") as call:
+                response = gemini_model.generate_content(full_prompt, generation_config=gen_config)
+                call.ok = bool(response.text)
             if response.text:
                 return response.text
         except Exception as e:
@@ -92,7 +96,8 @@ def _llm(prompt: str, system: str = "", json_mode: bool = False) -> Optional[str
             kwargs = {"model": "deepseek-chat", "messages": msgs, "temperature": 0.4, "max_tokens": 4000}
             if json_mode:
                 kwargs["response_format"] = {"type": "json_object"}
-            return deepseek_client.chat.completions.create(**kwargs).choices[0].message.content
+            with llm_call("deepseek", "text"):
+                return deepseek_client.chat.completions.create(**kwargs).choices[0].message.content
         except Exception as e:
             print(f"[EvalService] DeepSeek LLM error: {e}")
 
@@ -157,13 +162,15 @@ def _transcribe(video_path: str) -> str:
         try:
             import google.generativeai as genai
             print("[Scribe] Uploading to Gemini for transcription...")
-            audio_file = genai.upload_file(str(path))
-            response = gemini_model.generate_content([
-                "Transcribe this audio/video recording verbatim. "
-                "Return ONLY the transcript text, nothing else. "
-                "If multiple speakers, prefix with 'Interviewer:' or 'Candidate:'.",
-                audio_file,
-            ])
+            with llm_call("gemini", "transcribe") as call:
+                audio_file = genai.upload_file(str(path))
+                response = gemini_model.generate_content([
+                    "Transcribe this audio/video recording verbatim. "
+                    "Return ONLY the transcript text, nothing else. "
+                    "If multiple speakers, prefix with 'Interviewer:' or 'Candidate:'.",
+                    audio_file,
+                ])
+                call.ok = bool(response.text)
             if response.text:
                 print(f"[Scribe] ✓ Gemini transcript: {len(response.text)} chars")
                 return response.text
@@ -195,16 +202,18 @@ def _analyze_frames(video_path: str) -> dict:
                 time.sleep(2)
 
             if video_file.state.name != "FAILED":
-                resp = gemini_model.generate_content(
-                    ["Analyze this mock interview video for body language. "
-                     "Return ONLY valid JSON: "
-                     '{"eye_contact_percent": 0-100, "good_posture_percent": 0-100, '
-                     '"engagement_percent": 0-100, "concerns": ["behavioral observations"], '
-                     '"timeline_notes": "how confidence changed during interview"}',
-                     video_file],
-                    generation_config={"response_mime_type": "application/json", "max_output_tokens": 500},
-                )
-                parsed = _parse_json(resp.text)
+                with llm_call("gemini", "vision") as call:
+                    resp = gemini_model.generate_content(
+                        ["Analyze this mock interview video for body language. "
+                         "Return ONLY valid JSON: "
+                         '{"eye_contact_percent": 0-100, "good_posture_percent": 0-100, '
+                         '"engagement_percent": 0-100, "concerns": ["behavioral observations"], '
+                         '"timeline_notes": "how confidence changed during interview"}',
+                         video_file],
+                        generation_config={"response_mime_type": "application/json", "max_output_tokens": 500},
+                    )
+                    parsed = _parse_json(resp.text)
+                    call.ok = bool(parsed)
                 if parsed:
                     print(f"[Observer] ✓ Gemini video analysis complete")
                     try:
@@ -729,8 +738,12 @@ async def start_evaluation(request: Request, req: EvaluateRequest, background_ta
                            _: None = Depends(require_internal)):
     if not req.video_path:
         raise HTTPException(status_code=400, detail="video_path is required.")
-    print(f"[EvalService] Evaluation queued for interview_id={req.interview_id}")
-    background_tasks.add_task(_run_evaluation, req)
+    if queue.REDIS_URL:
+        fresh = await queue.enqueue(req.model_dump())
+        print(f"[EvalService] Evaluation {'queued' if fresh else 'already queued'} for interview_id={req.interview_id}")
+    else:  # local dev / tests: run in this process
+        background_tasks.add_task(_run_evaluation, req)
+        print(f"[EvalService] Evaluation started in-process for interview_id={req.interview_id}")
     return EvaluateResponse(
         interview_id=req.interview_id,
         status="processing",

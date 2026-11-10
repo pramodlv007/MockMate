@@ -84,3 +84,49 @@ def test_video_duration_from_decoded_audio(tmp_path):
                     "-c:a", "libopus", str(out)], check=True)
     assert abs(eval_main._video_duration(str(out)) - 2.5) < 0.2
     assert eval_main._video_duration(str(tmp_path / "missing.webm")) is None
+
+
+# ── Queue worker (arq) ───────────────────────────────────────────────────────
+def _job(monkeypatch, evaluate):
+    from services.evaluation import queue
+    patched = []
+    async def fake_patch(iid, body): patched.append(body)
+    monkeypatch.setattr(eval_main, "_evaluate", evaluate)
+    monkeypatch.setattr(eval_main, "_patch_interview", fake_patch)
+    payload = {"interview_id": "abc", "video_path": "s3://b/v.webm", "company": "Acme", "job_description": "jd"}
+    return queue, payload, patched
+
+
+def test_worker_retries_then_marks_error(monkeypatch):
+    import pytest
+    from arq import Retry
+    async def boom(req): raise RuntimeError("gemini down")
+    queue, payload, patched = _job(monkeypatch, boom)
+
+    for attempt in (1, 2):                                   # not the last try: retry with backoff, no status change
+        with pytest.raises(Retry):
+            asyncio.run(queue.evaluate_interview({"job_try": attempt}, payload))
+    assert patched == []
+    asyncio.run(queue.evaluate_interview({"job_try": queue.MAX_TRIES}, payload))  # last try: give up cleanly
+    assert patched == [{"status": "error"}]
+
+
+def test_worker_success_does_not_touch_status(monkeypatch):
+    seen = []
+    async def ok(req): seen.append(req.interview_id)
+    queue, payload, patched = _job(monkeypatch, ok)
+    asyncio.run(queue.evaluate_interview({"job_try": 1}, payload))
+    assert seen == ["abc"] and patched == []
+
+
+def test_start_evaluation_enqueues_when_redis_configured(monkeypatch):
+    from fastapi.testclient import TestClient
+    from services.evaluation import queue
+    queued = []
+    async def fake_enqueue(payload): queued.append(payload["interview_id"]); return True
+    monkeypatch.setattr(queue, "REDIS_URL", "redis://example:6379")
+    monkeypatch.setattr(queue, "enqueue", fake_enqueue)
+    monkeypatch.setattr(eval_main, "_run_evaluation", lambda req: (_ for _ in ()).throw(AssertionError("ran in-process")))
+    body = {"interview_id": "abc", "video_path": "s3://b/v.webm", "company": "Acme", "job_description": "jd"}
+    r = TestClient(eval_main.app).post("/evaluation/start", json=body, headers={"X-Internal-Token": "test-internal-token"})
+    assert r.status_code == 200 and queued == ["abc"]

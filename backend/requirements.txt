@@ -37,3 +37,7 @@ Pillow
 
 # AWS SDK
 boto3
+
+# Queue + metrics (k8s deployment)
+arq==0.28.0
+prometheus-client==0.26.0
