@@ -37,6 +37,23 @@ def test_upload_triggers_evaluation_with_s3_path(client, make_session, monkeypat
     assert calls[0]["json"]["video_path"] == f"s3://bucket/videos/{sid}.webm"
 
 
+def test_upload_stores_question_timings(client, make_session, monkeypatch, tmp_path):
+    user = uuid.uuid4()
+    sid = make_session(user)
+    monkeypatch.setattr(interview_main, "UPLOAD_DIR", tmp_path)
+    _capture_post(monkeypatch)
+    up = lambda timings: client.post(f"/{sid}/upload", files={"file": ("v.webm", b"data")},
+                                     data={"timings": timings}, headers=auth(user))
+
+    assert up("not json").status_code == 422
+    assert up('[{"start": 5, "end": 2}]').status_code == 200          # end before start: ignored, not stored
+    assert client.get(f"/{sid}", headers=auth(user)).json()["questions"][0]["start_seconds"] is None
+
+    assert up('[{"start": 0, "end": 42.5}, {"start": 42.5, "end": 90}]').status_code == 200  # extra entry ignored
+    q = client.get(f"/{sid}", headers=auth(user)).json()["questions"][0]
+    assert (q["start_seconds"], q["end_seconds"]) == (0, 42.5)
+
+
 def test_failed_evaluation_trigger_marks_session_error(client, make_session, monkeypatch, tmp_path):
     user = uuid.uuid4()
     sid = make_session(user)

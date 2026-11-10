@@ -3,7 +3,7 @@ MockMate Interview Service — Port 8004
 Manages interview sessions: create, fetch, upload video, patch evaluation results.
 Calls Question Service to generate questions on session creation.
 """
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Request
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Request
 from common.auth import get_current_user_id, get_optional_user_id, is_internal, require_internal, user_or_ip_key, INTERNAL_HEADERS
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -14,8 +14,9 @@ from common.database import get_db, create_tables
 from . import models
 from .schemas import InterviewSessionOut, EvaluationPatch
 from pathlib import Path
-import httpx, uuid, os, traceback
+import httpx, uuid, os, traceback, json, math
 from datetime import datetime, timedelta
+from typing import Optional
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent.parent.parent / ".env")
@@ -61,6 +62,28 @@ EVALUATION_SERVICE_URL = os.getenv("EVALUATION_SERVICE_URL", "http://localhost:8
 AUTH_SERVICE_URL       = os.getenv("AUTH_SERVICE_URL",       "http://localhost:8001")
 UPLOAD_DIR = Path(__file__).parent.parent.parent / "uploads" / "videos"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _parse_timings(raw: Optional[str], n_questions: int) -> list:
+    """Client-sent JSON list of {start, end} seconds, one per question in order. Untrusted:
+    malformed JSON is a 422; individual bad entries become None so one glitch doesn't drop the rest."""
+    if not raw:
+        return []
+    try:
+        items = json.loads(raw)
+    except ValueError:
+        raise HTTPException(422, "timings must be JSON")
+    if not isinstance(items, list):
+        raise HTTPException(422, "timings must be a list")
+    out = []
+    for item in items[:n_questions]:
+        try:
+            start, end = float(item["start"]), float(item["end"])
+            ok = math.isfinite(start) and math.isfinite(end) and 0 <= start <= end
+        except (TypeError, KeyError, ValueError):
+            ok = False
+        out.append((start, end) if ok else None)
+    return out
 
 
 def _session_or_404(db: Session, interview_id: str, user_id=None, internal: bool = False):
@@ -234,10 +257,14 @@ async def upload_video(
     request: Request,
     interview_id: str,
     file: UploadFile = File(...),
+    timings: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
     session = _session_or_404(db, interview_id, user_id)
+    for q, window in zip(session.questions, _parse_timings(timings, len(session.questions))):
+        if window:
+            q.start_seconds, q.end_seconds = window
 
     ext = file.filename.rsplit(".", 1)[-1] if "." in file.filename else "webm"
     filename = f"{interview_id}.{ext}"

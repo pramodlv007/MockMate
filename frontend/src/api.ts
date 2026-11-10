@@ -263,9 +263,10 @@ export const endpoints = {
         api.get<InterviewSession[]>(`/interviews/user/me`),
     saveTranscripts: (id: string | number, transcripts: Record<number, string>) =>
         api.post(`/interviews/${id}/transcripts`, { transcripts }),
-    uploadVideo: (id: string | number, file: Blob) => {
+    uploadVideo: (id: string | number, file: Blob, timings?: { start: number; end: number }[]) => {
         const form = new FormData();
         form.append('file', file, 'recording.webm');
+        if (timings?.length) form.append('timings', JSON.stringify(timings));
         // Don't set Content-Type — axios sets multipart/form-data + boundary automatically for FormData
         return api.post(`/interviews/${id}/upload`, form);
     },

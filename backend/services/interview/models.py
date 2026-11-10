@@ -49,5 +49,7 @@ class Question(Base):
     transcript  = Column(Text, nullable=True)       # Per-question answer transcript
     score       = Column(Float, nullable=True)      # Per-question score 0-100
     evaluation  = Column(Text, nullable=True)       # JSON per-question eval
+    start_seconds = Column(Float, nullable=True)    # recording-relative window in which this question was on screen
+    end_seconds   = Column(Float, nullable=True)
 
     session = relationship("InterviewSession", back_populates="questions")

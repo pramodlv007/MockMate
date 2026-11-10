@@ -34,6 +34,14 @@ export const InterviewRoom = () => {
     const recognitionRef = useRef<any>(null);
     const currentQuestionIdxRef = useRef(0);
     const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+    // Recording-relative seconds each question was on screen; lets evaluation cut the transcript per question.
+    const recordStartRef = useRef(0);
+    const timingsRef = useRef<{ start: number; end: number }[]>([]);
+    const elapsed = () => Math.round((performance.now() - recordStartRef.current) / 100) / 10;
+    const closeQuestionWindow = (idx: number) => {
+        const start = idx === 0 ? 0 : timingsRef.current[idx - 1]?.end ?? 0;
+        timingsRef.current[idx] = { start, end: elapsed() };
+    };
 
     useEffect(() => {
         if (!id) return;
@@ -150,6 +158,8 @@ export const InterviewRoom = () => {
             recorder.start(1000);
             mediaRecorderRef.current = recorder;
         }
+        recordStartRef.current = performance.now();
+        timingsRef.current = [];
         setIsRecording(true);
         const role = session.target_role ? ` for the ${session.target_role} role` : '';
         ask(`Hi, I'm ${INTERVIEWER}, and I'll be interviewing you today${role}. Let's get started. ${session.questions[0].content}`);
@@ -157,6 +167,7 @@ export const InterviewRoom = () => {
 
     const finishInterview = () => {
         if (!isRecording) return;
+        closeQuestionWindow(currentQuestionIdxRef.current);
         utteranceRef.current = null;
         window.speechSynthesis?.cancel();
         setAiSpeaking(false);
@@ -183,7 +194,7 @@ export const InterviewRoom = () => {
                 if (Object.keys(questionTranscripts).length > 0) {
                     try { await endpoints.saveTranscripts(id, questionTranscripts); } catch { /* evaluation falls back to the video transcript */ }
                 }
-                await endpoints.uploadVideo(id, blob);
+                await endpoints.uploadVideo(id, blob, Array.from(timingsRef.current)); // holes → null, so indices stay aligned
             }
             navigate(`/results/${id}`);
         } catch (err: any) {
@@ -196,6 +207,7 @@ export const InterviewRoom = () => {
         if (!session) return;
         if (currentQuestionIdx < session.questions.length - 1) {
             const next = currentQuestionIdx + 1;
+            closeQuestionWindow(currentQuestionIdx);
             setCurrentQuestionIdx(next);
             currentQuestionIdxRef.current = next;
             ask(`${TRANSITIONS[next % TRANSITIONS.length]} ${session.questions[next].content}`);

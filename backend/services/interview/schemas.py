@@ -12,6 +12,8 @@ class QuestionOut(BaseModel):
     order_index: int = 0
     transcript: Optional[str] = None
     score: Optional[float] = None
+    start_seconds: Optional[float] = None
+    end_seconds: Optional[float] = None
 
     class Config:
         from_attributes = True
