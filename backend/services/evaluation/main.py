@@ -596,34 +596,41 @@ async def _evaluate(req: EvaluateRequest):
         vision = _analyze_frames(local_path)
 
         # Step 3: Speech metrics (no AI)
-        speech = _speech_metrics(transcript, _video_duration(local_path))
+        duration = _video_duration(local_path)
+        speech = _speech_metrics(transcript, duration)
     finally:
         if local_path != req.video_path:
             Path(local_path).unlink(missing_ok=True)
+
+    # Step 4: Pre-existing per-question transcripts (from browser Speech API)
+    segments = []
+    pre_segmented = False
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(f"{INTERVIEW_SERVICE_URL}/{req.interview_id}", headers=INTERNAL_HEADERS)
+            if resp.status_code == 200:
+                qs = resp.json().get("questions", [])
+                if any(q.get("transcript") for q in qs):
+                    segments = [
+                        {"question_index": i, "answer_text": q.get("transcript") or ""}
+                        for i, q in enumerate(qs)
+                    ]
+                    pre_segmented = True
+                    print(f"[EvalService] Using {len(segments)} browser-captured transcripts")
+    except Exception as e:
+        print(f"[EvalService] Could not fetch pre-segmented transcripts: {e}")
+
+    # Server transcription failed (e.g. LLM outage) but the browser heard the answers: grade those.
+    browser_text = " ".join(s["answer_text"] for s in segments if s["answer_text"]).strip()
+    if len(transcript.strip()) < 30 and len(browser_text) >= 30:
+        print("[EvalService] Server transcript empty — falling back to browser transcripts")
+        transcript = browser_text
+        speech = _speech_metrics(transcript, duration)
 
     if len(transcript.strip()) < 30:
         feedback = _empty_result("No meaningful speech detected. Ensure microphone was active.")
         overall_score = 10
     else:
-        # Step 4: Check for pre-existing per-question transcripts (from browser Speech API)
-        segments = []
-        pre_segmented = False
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(f"{INTERVIEW_SERVICE_URL}/{req.interview_id}", headers=INTERNAL_HEADERS)
-                if resp.status_code == 200:
-                    session_data = resp.json()
-                    qs = session_data.get("questions", [])
-                    if any(q.get("transcript") for q in qs):
-                        segments = [
-                            {"question_index": i, "answer_text": q.get("transcript", "")}
-                            for i, q in enumerate(qs)
-                        ]
-                        pre_segmented = True
-                        print(f"[EvalService] Using {len(segments)} browser-captured transcripts")
-        except Exception as e:
-            print(f"[EvalService] Could not fetch pre-segmented transcripts: {e}")
-
         if not pre_segmented:
             segments = _segment_transcript(transcript, req.questions)
             print(f"[EvalService] LLM segmented transcript into {len(segments)} segments")
