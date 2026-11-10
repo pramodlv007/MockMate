@@ -10,6 +10,7 @@
 #            rolls back to the previous image if the health check fails
 #
 # Required GitHub Secrets: EC2_HOST, EC2_USER, EC2_SSH_KEY, VITE_API_URL
+# Optional: VITE_GOOGLE_CLIENT_ID (Google sign-in button; backend also needs GOOGLE_CLIENT_ID in EC2 .env)
 # The registry login uses the built-in GITHUB_TOKEN; no extra secret needed.
 # EC2 keeps its runtime config in ~/MockMate/.env (never baked into the image).
 # ─────────────────────────────────────────────────────────────────────────────
@@ -55,6 +56,7 @@ jobs:
         run: cd frontend && npm ci && npm run build
         env:
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
+          VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
       - uses: actions/upload-artifact@v4
         with:
           name: frontend-dist
