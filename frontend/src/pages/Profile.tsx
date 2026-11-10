@@ -11,11 +11,11 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 const skillTagColors = [
-    'bg-indigo-500/20 text-indigo-300 border-indigo-500/30',
-    'bg-purple-500/20 text-purple-300 border-purple-500/30',
+    'bg-green-500/20 text-green-300 border-green-500/30',
+    'bg-teal-500/20 text-teal-300 border-teal-500/30',
     'bg-blue-500/20 text-blue-300 border-blue-500/30',
     'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
-    'bg-violet-500/20 text-violet-300 border-violet-500/30',
+    'bg-sky-500/20 text-sky-300 border-sky-500/30',
 ];
 
 function SkillTag({ skill, index }: { skill: string; index: number }) {
@@ -49,16 +49,16 @@ function LinkRow({ icon, label, url }: { icon: React.ReactNode; label: string; u
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-3 p-3 rounded-xl bg-slate-800/50 border border-slate-700/50 hover:border-indigo-500/40 hover:bg-slate-800 transition-all group"
+            className="flex items-center gap-3 p-3 rounded-xl bg-slate-800/50 border border-slate-700/50 hover:border-green-500/40 hover:bg-slate-800 transition-all group"
         >
             <div className="w-8 h-8 rounded-lg bg-slate-700 flex items-center justify-center">
                 {icon}
             </div>
             <div className="min-w-0 flex-1">
                 <p className="text-xs text-slate-500">{label}</p>
-                <p className="text-sm text-indigo-400 truncate group-hover:text-indigo-300 transition-colors">{url}</p>
+                <p className="text-sm text-green-400 truncate group-hover:text-green-300 transition-colors">{url}</p>
             </div>
-            <ExternalLink size={14} className="text-slate-600 group-hover:text-indigo-400 transition-colors flex-shrink-0" />
+            <ExternalLink size={14} className="text-slate-600 group-hover:text-green-400 transition-colors flex-shrink-0" />
         </a>
     );
 }
@@ -177,7 +177,7 @@ export const Profile = () => {
     if (!authUser) return (
         <div className="flex items-center justify-center pt-32">
             <div className="flex flex-col items-center gap-4 text-slate-400">
-                <Loader size={36} className="animate-spin text-indigo-400" />
+                <Loader size={36} className="animate-spin text-green-400" />
                 <p className="text-sm">Loading your profile...</p>
             </div>
         </div>
@@ -206,12 +206,12 @@ export const Profile = () => {
             )}
 
             {/* ── Profile Header Card ──────────────────────────────────────── */}
-            <div className="relative overflow-hidden rounded-2xl border border-slate-700/50 bg-gradient-to-br from-slate-900 via-indigo-950/30 to-slate-900">
-                <div className="absolute inset-0 bg-gradient-to-r from-indigo-600/5 via-purple-600/5 to-transparent pointer-events-none" />
+            <div className="relative overflow-hidden rounded-2xl border border-slate-700/50 bg-gradient-to-br from-slate-900 via-green-950/30 to-slate-900">
+                <div className="absolute inset-0 bg-gradient-to-r from-green-600/5 via-teal-600/5 to-transparent pointer-events-none" />
                 <div className="relative p-6 flex flex-col sm:flex-row items-start sm:items-center gap-5">
                     {/* Avatar */}
                     <div className="relative flex-shrink-0">
-                        <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/25">
+                        <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-green-500 to-teal-600 flex items-center justify-center shadow-lg shadow-green-500/25">
                             <span className="text-2xl font-bold text-white">{initials}</span>
                         </div>
                         {profileComplete && (
@@ -236,10 +236,10 @@ export const Profile = () => {
                             <span>{authUser.email}</span>
                         </div>
                         {authUser.target_role && (
-                            <div className="flex items-center gap-1.5 text-indigo-400 text-sm">
+                            <div className="flex items-center gap-1.5 text-green-400 text-sm">
                                 <Star size={13} />
                                 <span>{authUser.target_role}</span>
-                                {authUser.experience_years !== undefined && (
+                                {authUser.experience_years != null && (
                                     <span className="text-slate-500">·  {authUser.experience_years} yrs exp</span>
                                 )}
                             </div>
@@ -250,7 +250,7 @@ export const Profile = () => {
                     {!isEditing && (
                         <button
                             onClick={() => setIsEditing(true)}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600/20 border border-indigo-500/40 text-indigo-300 hover:bg-indigo-600/30 hover:border-indigo-400/60 transition-all text-sm font-medium flex-shrink-0"
+                            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-green-600/20 border border-green-500/40 text-green-300 hover:bg-green-600/30 hover:border-green-400/60 transition-all text-sm font-medium flex-shrink-0"
                         >
                             <Pencil size={14} />
                             Edit Profile
@@ -268,7 +268,7 @@ export const Profile = () => {
                             <button
                                 onClick={handleSave}
                                 disabled={loading}
-                                className="flex items-center gap-2 px-5 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:from-indigo-500 hover:to-purple-500 transition-all text-sm font-semibold shadow-lg shadow-indigo-500/25 disabled:opacity-60"
+                                className="btn btn--primary"
                             >
                                 {loading ? <Loader size={14} className="animate-spin" /> : <Save size={14} />}
                                 {loading ? 'Saving...' : 'Save Changes'}
@@ -286,9 +286,9 @@ export const Profile = () => {
                     <div className="space-y-5">
 
                         {/* Resume Status */}
-                        <div className="card space-y-4">
+                        <div className="surface space-y-4">
                             <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-2">
-                                <FileText size={14} className="text-indigo-400" />
+                                <FileText size={14} className="text-green-400" />
                                 Resume
                             </h2>
                             {existingResume ? (
@@ -311,24 +311,24 @@ export const Profile = () => {
                         </div>
 
                         {/* Career Info */}
-                        <div className="card space-y-4">
+                        <div className="surface space-y-4">
                             <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-2">
-                                <Briefcase size={14} className="text-indigo-400" />
+                                <Briefcase size={14} className="text-green-400" />
                                 Career
                             </h2>
                             <div className="space-y-4">
                                 <InfoRow
-                                    icon={<Star size={14} className="text-indigo-400" />}
+                                    icon={<Star size={14} className="text-green-400" />}
                                     label="Target Role"
                                     value={authUser.target_role}
                                 />
                                 <InfoRow
-                                    icon={<Zap size={14} className="text-indigo-400" />}
+                                    icon={<Zap size={14} className="text-green-400" />}
                                     label="Experience"
-                                    value={authUser.experience_years !== undefined ? `${authUser.experience_years} years` : undefined}
+                                    value={authUser.experience_years != null ? `${authUser.experience_years} years` : undefined}
                                 />
                                 <InfoRow
-                                    icon={<GraduationCap size={14} className="text-indigo-400" />}
+                                    icon={<GraduationCap size={14} className="text-green-400" />}
                                     label="Education"
                                     value={authUser.education}
                                 />
@@ -340,9 +340,9 @@ export const Profile = () => {
 
                         {/* Bio */}
                         {authUser.bio && (
-                            <div className="card space-y-3">
+                            <div className="surface space-y-3">
                                 <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-2">
-                                    <UserIcon size={14} className="text-indigo-400" />
+                                    <UserIcon size={14} className="text-green-400" />
                                     About
                                 </h2>
                                 <p className="text-slate-300 text-sm leading-relaxed">{authUser.bio}</p>
@@ -354,12 +354,12 @@ export const Profile = () => {
                     <div className="space-y-5">
 
                         {/* Skills */}
-                        <div className="card space-y-4">
+                        <div className="surface space-y-4">
                             <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-2">
-                                <Zap size={14} className="text-indigo-400" />
+                                <Zap size={14} className="text-green-400" />
                                 Technical Skills
                                 {skills.length > 0 && (
-                                    <span className="ml-auto text-xs bg-indigo-500/20 text-indigo-400 px-2 py-0.5 rounded-full normal-case tracking-normal">
+                                    <span className="ml-auto text-xs bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full normal-case tracking-normal">
                                         {skills.length} skills
                                     </span>
                                 )}
@@ -376,9 +376,9 @@ export const Profile = () => {
                         </div>
 
                         {/* Links */}
-                        <div className="card space-y-3">
+                        <div className="surface space-y-3">
                             <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-2">
-                                <Globe size={14} className="text-indigo-400" />
+                                <Globe size={14} className="text-green-400" />
                                 Links
                             </h2>
                             <div className="space-y-2">
@@ -393,7 +393,7 @@ export const Profile = () => {
                                     url={authUser.linkedin_url}
                                 />
                                 <LinkRow
-                                    icon={<Globe size={14} className="text-indigo-400" />}
+                                    icon={<Globe size={14} className="text-green-400" />}
                                     label="Portfolio"
                                     url={authUser.portfolio_url}
                                 />
@@ -411,18 +411,18 @@ export const Profile = () => {
                 <div className="space-y-5">
 
                     {/* Resume Upload */}
-                    <div className="card space-y-4 border border-indigo-500/30 bg-indigo-950/20">
+                    <div className="surface space-y-4 border border-green-500/30 bg-green-950/20">
                         <h2 className="text-lg font-semibold flex items-center gap-2">
-                            <FileText size={18} className="text-indigo-400" />
+                            <FileText size={18} className="text-green-400" />
                             Resume
-                            <span className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full ml-1">
+                            <span className="text-xs bg-green-500/20 text-green-300 px-2 py-0.5 rounded-full ml-1">
                                 Powers AI questions
                             </span>
                         </h2>
 
                         <div
                             className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all duration-200 ${
-                                dragOver ? 'border-indigo-400 bg-indigo-500/10' : 'border-slate-600 hover:border-slate-500 hover:bg-white/5'
+                                dragOver ? 'border-green-400 bg-green-500/10' : 'border-slate-600 hover:border-slate-500 hover:bg-white/5'
                             }`}
                             onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
                             onDragLeave={() => setDragOver(false)}
@@ -437,7 +437,7 @@ export const Profile = () => {
                                 onChange={(e) => { const f = e.target.files?.[0]; if (f) handleResumeUpload(f); }}
                             />
                             {resumeUploading ? (
-                                <div className="flex flex-col items-center gap-2 text-indigo-400">
+                                <div className="flex flex-col items-center gap-2 text-green-400">
                                     <Loader size={28} className="animate-spin" />
                                     <p className="text-sm font-medium">Extracting resume text...</p>
                                 </div>
@@ -476,9 +476,9 @@ export const Profile = () => {
                     </div>
 
                     {/* Career Info */}
-                    <div className="card space-y-5">
+                    <div className="surface space-y-5">
                         <h2 className="text-lg font-semibold flex items-center gap-2">
-                            <Briefcase size={18} className="text-indigo-400" />
+                            <Briefcase size={18} className="text-green-400" />
                             Career Information
                         </h2>
                         <div className="grid md:grid-cols-2 gap-4">
@@ -530,9 +530,9 @@ export const Profile = () => {
                     </div>
 
                     {/* Skills */}
-                    <div className="card space-y-4">
+                    <div className="surface space-y-4">
                         <h2 className="text-lg font-semibold flex items-center gap-2">
-                            <Zap size={18} className="text-indigo-400" />
+                            <Zap size={18} className="text-green-400" />
                             Technical Skills
                         </h2>
                         <div>
@@ -555,9 +555,9 @@ export const Profile = () => {
                     </div>
 
                     {/* Links */}
-                    <div className="card space-y-4">
+                    <div className="surface space-y-4">
                         <h2 className="text-lg font-semibold flex items-center gap-2">
-                            <Globe size={18} className="text-indigo-400" />
+                            <Globe size={18} className="text-green-400" />
                             Professional Links
                         </h2>
                         <div className="space-y-4">
@@ -604,14 +604,14 @@ export const Profile = () => {
                     <div className="flex gap-3 pt-2 pb-8">
                         <button
                             onClick={handleCancel}
-                            className="flex-1 py-3 rounded-xl bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 transition-all font-medium"
+                            className="btn btn--secondary btn--xl flex-1"
                         >
                             Cancel
                         </button>
                         <button
                             onClick={handleSave}
                             disabled={loading}
-                            className="flex-1 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:from-indigo-500 hover:to-purple-500 transition-all font-semibold shadow-lg shadow-indigo-500/25 disabled:opacity-60 flex items-center justify-center gap-2"
+                            className="btn btn--primary btn--xl flex-1"
                         >
                             {loading ? <Loader size={16} className="animate-spin" /> : <Save size={16} />}
                             {loading ? 'Saving...' : 'Save Profile'}

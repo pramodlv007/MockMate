@@ -39,7 +39,7 @@ export const InterviewSetup = () => {
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-6">
-                <div className="card space-y-6">
+                <div className="surface space-y-6">
                     <h3 className="text-lg font-semibold border-b border-slate-700 pb-2 mb-4">Job Context</h3>
 
                     <div className="grid md:grid-cols-2 gap-4">
@@ -108,7 +108,7 @@ export const InterviewSetup = () => {
 
                 <div className="grid md:grid-cols-2 gap-6">
                     {/* Persona Selector */}
-                    <div className="card space-y-4">
+                    <div className="surface space-y-4">
                         <h3 className="text-lg font-semibold flex items-center gap-2">
                             <UserCircle className="text-emerald-400" size={20} />
                             Interviewer Persona
@@ -136,7 +136,7 @@ export const InterviewSetup = () => {
                     </div>
 
                     {/* Strictness Selector */}
-                    <div className="card space-y-4">
+                    <div className="surface space-y-4">
                         <h3 className="text-lg font-semibold flex items-center gap-2">
                             <ShieldAlert className="text-cyan-400" size={20} />
                             Evaluation Strictness
@@ -164,7 +164,7 @@ export const InterviewSetup = () => {
                     </div>
                 </div>
 
-                <div className="card">
+                <div className="surface">
                     <label className="block text-sm font-medium text-slate-300 mb-3">Number of Questions</label>
                     <div className="flex items-center gap-4">
                         <input
@@ -180,7 +180,7 @@ export const InterviewSetup = () => {
                     </div>
                 </div>
 
-                <label className="card flex items-start gap-3 cursor-pointer">
+                <label className="surface flex items-start gap-3 cursor-pointer">
                     <input type="checkbox" required className="mt-1 w-5 h-5 accent-emerald-500 flex-shrink-0" />
                     <span className="text-sm text-slate-300">
                         I consent to MockMate recording my camera and microphone during this interview, and to the
@@ -192,7 +192,7 @@ export const InterviewSetup = () => {
                 <button
                     type="submit"
                     disabled={loading}
-                    className="btn-primary w-full py-5 text-xl font-bold shadow-xl shadow-indigo-500/20"
+                    className="btn btn--primary w-full py-5 text-xl font-bold"
                 >
                     {loading ? (
                         <><Loader2 className="animate-spin" size={24} /> Orchestrating Session...</>

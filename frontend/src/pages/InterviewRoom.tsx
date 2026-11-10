@@ -282,7 +282,7 @@ export const InterviewRoom = () => {
                     <AnimatePresence mode="wait">
                         <motion.div key={isRecording ? currentQuestionIdx : 'intro'}
                             initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
-                            className="card relative w-full !p-5 text-xl leading-relaxed">
+                            className="surface relative w-full !p-5 text-xl leading-relaxed">
                             {/* bubble tail pointing up at the interviewer */}
                             <span className="absolute -top-[11px] left-1/2 -translate-x-1/2 w-5 h-5 rotate-45 bg-[var(--paper-2)] border-l-2 border-t-2 border-[var(--ink)]" />
                             {isRecording && (
@@ -303,7 +303,7 @@ export const InterviewRoom = () => {
                     )}
 
                     {!isRecording && !isUploading && (
-                        <button onClick={startInterview} disabled={!cameraReady} className="btn-primary text-xl !px-10 !py-4 disabled:opacity-50">
+                        <button onClick={startInterview} disabled={!cameraReady} className="btn btn--primary text-xl !px-10 !py-4 disabled:opacity-50">
                             {cameraReady ? 'Start the interview' : 'Waiting for camera...'}
                         </button>
                     )}
@@ -332,7 +332,7 @@ export const InterviewRoom = () => {
                 <IconBtn onClick={() => ask(currentQuestion.content)} label="Repeat question" disabled={!isRecording || aiSpeaking}>
                     <RotateCcw size={20} />
                 </IconBtn>
-                <button onClick={nextQuestion} disabled={!isRecording} className="btn-primary disabled:opacity-40">
+                <button onClick={nextQuestion} disabled={!isRecording} className="btn btn--primary disabled:opacity-40">
                     {isLastQuestion ? 'Finish' : 'Next question'} <ChevronRight size={18} />
                 </button>
                 <IconBtn onClick={finishInterview} label="End interview" danger disabled={!isRecording}>
