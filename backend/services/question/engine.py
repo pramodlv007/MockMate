@@ -657,11 +657,9 @@ class QuestionEngine:
                 self._recent_questions[user_id] = self._recent_questions[user_id][-50:]
             return questions
 
-        print("[QuestionEngine] All LLMs failed — returning error placeholder")
-        return [
-            f"The AI question generator is temporarily unavailable. Please try again in a moment. "
-            f"(Target: {company} {role} interview with {count} questions)"
-        ]
+        # Empty, not an apology string: the interview service then uses its built-in fallback questions.
+        print("[QuestionEngine] All LLMs failed — returning no questions")
+        return []
 
 
 engine = QuestionEngine()
