@@ -496,7 +496,7 @@ COMPUTED SCORES:
 - Presence: {composite['score_breakdown']['presence']['score']}/100
 
 PER-QUESTION RESULTS:
-{json.dumps([{{"q": pq.get("question","")[:80], "score": pq.get("overall",50), "category": pq.get("category",""), "gap": pq.get("what_was_missing","")[:100]}} for pq in per_question_evals], indent=2)}
+{json.dumps([{"q": pq.get("question","")[:80], "score": pq.get("overall",50), "category": pq.get("category",""), "gap": pq.get("what_was_missing","")[:100]} for pq in per_question_evals], indent=2)}
 
 SPEECH: {speech.get('words_per_minute') or 'unknown'} WPM, {speech.get('filler_word_count',0)} fillers
 COMPANY: {company}
