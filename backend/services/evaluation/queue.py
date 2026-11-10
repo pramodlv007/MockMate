@@ -57,9 +57,14 @@ async def _startup(ctx):
     start_http_server(int(os.getenv("METRICS_PORT", "9100")))
 
 
+# On a fresh deploy Redis may start after the worker; wait up to ~60s instead of crash-looping.
+_redis_settings = RedisSettings.from_dsn(REDIS_URL or "redis://localhost:6379")
+_redis_settings.conn_retries = 60
+
+
 class WorkerSettings:
     functions = [evaluate_interview]
-    redis_settings = RedisSettings.from_dsn(REDIS_URL or "redis://localhost:6379")
+    redis_settings = _redis_settings
     on_startup = _startup
     max_tries = MAX_TRIES
     # shortcut: 1 job at a time because _evaluate's LLM calls block the event loop, so a 2nd job wouldn't
