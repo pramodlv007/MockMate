@@ -7,11 +7,11 @@ from typing import Optional
 from fastapi import FastAPI, Depends, File, Form, HTTPException, Request, UploadFile
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
-from common.auth import get_current_user_id
+from common.auth import get_current_user_id, user_or_ip_key
 from .grader import BANK, grade
 
-limiter = Limiter(key_func=get_remote_address)
+# Per user, not per IP: behind the k8s Ingress every request arrives from the ingress pod's IP.
+limiter = Limiter(key_func=user_or_ip_key, storage_uri=os.getenv("REDIS_URL") or "memory://")
 app = FastAPI(title="MockMate Rubric Service", version="1.0.0")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
