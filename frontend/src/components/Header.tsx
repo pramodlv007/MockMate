@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Home, User, History, Sparkles, LogOut } from 'lucide-react';
+import { Home, User, History, Sparkles, LogOut, Mic } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuth } from '../context/AuthContext';
 
@@ -66,6 +66,7 @@ export const Header = () => {
                 {/* Nav */}
                 <nav className="flex items-center gap-1">
                     <NavItem to="/"        icon={Home}    label="Home"    />
+                    <NavItem to="/practice" icon={Mic}     label="Practice" />
                     <NavItem to="/history" icon={History} label="History" />
                     <NavItem to="/profile" icon={User}    label="Profile" />
                 </nav>

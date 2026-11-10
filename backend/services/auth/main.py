@@ -7,20 +7,27 @@ from fastapi import FastAPI, Depends, HTTPException, status, Response, Cookie, R
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.responses import JSONResponse
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
-import os, traceback
+import os, secrets, traceback, httpx
 from dotenv import load_dotenv
 from pathlib import Path
 
 load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
 from . import models, schemas, utils
-from common.database import get_db, engine
+from common.database import get_db, create_tables
 
-models.Base.metadata.create_all(bind=engine)
+create_tables()
+
+
+def _find_user(db: Session, email: str):
+    # Case/space-insensitive so "Me@Gmail.com " finds "me@gmail.com" (older rows may be mixed-case)
+    return db.query(models.User).filter(func.lower(models.User.email) == email.strip().lower()).first()
+
 
 app = FastAPI(title="MockMate Auth Service", version="2.0.0")
 
@@ -107,11 +114,11 @@ def health():
 # ─── Signup ───────────────────────────────────────────────────────────────────
 @app.post("/auth/signup", response_model=schemas.AuthResponse)
 def signup(user_in: schemas.UserCreate, response: Response, db: Session = Depends(get_db)):
-    if db.query(models.User).filter(models.User.email == user_in.email).first():
+    if _find_user(db, user_in.email):
         raise HTTPException(status_code=400, detail="Email already registered")
 
     user = models.User(
-        email=user_in.email,
+        email=user_in.email.strip().lower(),
         hashed_password=utils.get_password_hash(user_in.password),
         full_name=user_in.full_name,
         target_role=user_in.target_role,
@@ -140,7 +147,7 @@ def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):
-    user = db.query(models.User).filter(models.User.email == form_data.username).first()
+    user = _find_user(db, form_data.username)
     if not user or not utils.verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -156,6 +163,38 @@ def login(
     _set_refresh_cookie(response, refresh_token)
 
     return schemas.AuthResponse(access_token=access_token, token_type="bearer", user=user)
+
+
+# ─── Google Sign-In ───────────────────────────────────────────────────────────
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+
+@app.post("/auth/google", response_model=schemas.AuthResponse)
+def google_login(body: schemas.GoogleLogin, response: Response, db: Session = Depends(get_db)):
+    if not GOOGLE_CLIENT_ID:
+        raise HTTPException(status_code=503, detail="Google sign-in is not configured")
+    # shortcut: tokeninfo is one HTTP call per login; switch to local google-auth verification if volume grows
+    r = httpx.get("https://oauth2.googleapis.com/tokeninfo", params={"id_token": body.credential}, timeout=10)
+    info = r.json() if r.status_code == 200 else {}
+    if info.get("aud") != GOOGLE_CLIENT_ID or info.get("email_verified") not in (True, "true"):
+        raise HTTPException(status_code=401, detail="Invalid Google credential")
+
+    email = info["email"].lower()
+    user = _find_user(db, email)
+    if not user:
+        # hashed_password is NOT NULL; an unguessable random password keeps password login closed for this account
+        user = models.User(
+            email=email,
+            hashed_password=utils.get_password_hash(secrets.token_urlsafe(32)),
+            full_name=info.get("name"),
+            is_verified=True,
+        )
+        db.add(user)
+    user.last_login_at = datetime.utcnow()
+    db.commit()
+    db.refresh(user)
+
+    _set_refresh_cookie(response, _make_refresh_token(str(user.id)))
+    return schemas.AuthResponse(access_token=_make_access_token(str(user.id), user.email), token_type="bearer", user=user)
 
 
 # ─── Refresh ──────────────────────────────────────────────────────────────────

@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { GoogleButton } from '../components/GoogleButton';
 import { useState, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -355,6 +356,7 @@ export const Signup = () => {
                             </button>
                         </p>
                     </div>
+                    <div className="md:col-span-2"><GoogleButton onError={setError} /></div>
                 </form>
             </div>
         </div>

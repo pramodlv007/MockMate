@@ -1,0 +1,130 @@
+# Read-only health report for the EC2 backend. Changes nothing on the server.
+# Runs when this file changes, or by hand: Actions → "Diagnose EC2" → Run workflow.
+# The repo is public, so its logs are too: only state, masked errors and .env key NAMES are printed.
+name: Diagnose EC2
+
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/diagnose.yml']
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/ec2.pem
+          chmod 600 ~/.ssh/ec2.pem
+
+      - name: Server report
+        run: |
+          ssh -i ~/.ssh/ec2.pem -o StrictHostKeyChecking=no -o ConnectTimeout=20 \
+              ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} bash -s << 'ENDSSH'
+          mask() {
+            sed -E -e 's#(postgres(ql)?(\+[a-z0-9]+)?://)[^@[:space:]]+@#\1***@#g' \
+                   -e 's/postgres\.[a-z0-9]{15,}/postgres.***/g' \
+                   -e 's/[a-z0-9]{20}\.supabase\.co/***.supabase.co/g' \
+                   -e 's/[a-z0-9.-]+\.rds\.amazonaws\.com/***.rds.amazonaws.com/g' \
+                   -e 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/***@***/g' \
+                   -e 's/((password|user|key|token|secret)[a-z_]*[=:] *)[^[:space:],]+/\1***/Ig'
+          }
+
+          echo "== machine"
+          echo "booted: $(uptime -s)   load: $(cut -d' ' -f1-3 /proc/loadavg)"
+          df -h / | tail -1
+          free -m | sed -n 2p
+
+          echo; echo "== services (state / starts on boot)"
+          for s in docker nginx; do echo "$s: $(systemctl is-active $s) / $(systemctl is-enabled $s 2>/dev/null)"; done
+          echo "listening:"; sudo ss -ltn | awk 'NR>1 {print "  " $4}' | grep -E ':(80|443|8000)$'
+
+          echo; echo "== containers"
+          docker ps -a --format '{{.Names}}  {{.Image}}  {{.Status}}'
+
+          echo; echo "== mockmate container state"
+          docker inspect mockmate --format 'status={{.State.Status}} exit={{.State.ExitCode}} restarts={{.RestartCount}} oom={{.State.OOMKilled}} started={{.State.StartedAt}} finished={{.State.FinishedAt}} error={{.State.Error}}'
+
+          echo; echo "== docker disk use"
+          docker system df
+
+          echo; echo "== .env setting names (values not shown), file last changed $(stat -c %y ~/MockMate/.env | cut -d. -f1)"
+          grep -oE '^[A-Z_][A-Z0-9_]*=' ~/MockMate/.env | tr -d '=' | sort | tr '\n' ' '; echo
+          echo "running container was started with:"
+          docker inspect mockmate --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -oE '^[A-Z_][A-Z0-9_]*' | grep -vE '^(PATH|LANG|GPG_KEY|PYTHON_.*|HOME|HOSTNAME)$' | sort | tr '\n' ' '; echo
+          # old deploys built the image on this server, so an untracked backend/.env could be baked in
+          echo "~/MockMate/backend/.env on disk: $(test -f ~/MockMate/backend/.env && grep -oE '^[A-Z_][A-Z0-9_]*=' ~/MockMate/backend/.env | tr -d '=' | sort | tr '\n' ' ' || echo 'not present')"
+          echo "/app/.env baked into the running image: $(docker run --rm --entrypoint sh "$(docker inspect --format '{{.Config.Image}}' mockmate)" -c 'test -f /app/.env && grep -oE "^[A-Z_][A-Z0-9_]*=" /app/.env | tr -d = | sort | tr "\n" " " || echo not present')"
+
+          echo; echo "== last log lines (masked, request lines removed)"
+          docker logs mockmate --tail 150 2>&1 | grep -vE 'HTTP/[0-9.]+" [0-9]{3}' | tail -40 | mask
+
+          echo; echo "== database connection test (throwaway container, SELECT 1)"
+          IMG=$(docker inspect --format '{{.Config.Image}}' mockmate 2>/dev/null || echo mockmate)
+          timeout 60 docker run --rm --env-file ~/MockMate/.env "$IMG" python -c '
+          from sqlalchemy import text
+          from common.database import engine
+          try:
+              with engine.connect() as c:
+                  c.execute(text("select 1"))
+              print("DB CONNECT: OK")
+          except Exception as e:
+              print("DB CONNECT: FAILED -", type(e).__name__, "-", " ".join(str(e).split())[:400])
+          ' 2>&1 | tail -3 | mask
+
+          echo; echo "== DATABASE_URL from .env (the code does not read it yet), SELECT 1"
+          timeout 60 docker run --rm --env-file ~/MockMate/.env "$IMG" python -c '
+          import os
+          from sqlalchemy import create_engine, text
+          from sqlalchemy.engine import make_url
+          raw = os.getenv("DATABASE_URL")
+          if not raw:
+              raise SystemExit("DATABASE_URL not set")
+          u = make_url(raw).set(drivername="postgresql+psycopg2")
+          h = u.host or ""
+          kind = ("supabase pooler" if "pooler.supabase.com" in h else "supabase direct" if h.endswith("supabase.co")
+                  else "aws rds" if "rds.amazonaws.com" in h else "localhost" if h in ("localhost", "127.0.0.1") else "other")
+          print("host kind:", kind, "| port:", u.port, "| db:", u.database, "| sslmode in url:", "sslmode" in u.query)
+          try:
+              with create_engine(u, connect_args={"connect_timeout": 15}).connect() as c:
+                  c.execute(text("select 1"))
+              print("DATABASE_URL CONNECT: OK")
+          except Exception as e:
+              print("DATABASE_URL CONNECT: FAILED -", type(e).__name__, "-", " ".join(str(e).split())[:400])
+          ' 2>&1 | tail -3 | mask
+
+          echo; echo "== supabase project probe (settings the app really uses: /app/.env)"
+          timeout 90 docker run --rm "$IMG" python -c '
+          import urllib.error, urllib.request
+          from dotenv import dotenv_values
+          from sqlalchemy import create_engine, text
+          from sqlalchemy.engine import URL
+          cfg = dotenv_values("/app/.env")
+          user, server = cfg.get("POSTGRES_USER") or "", cfg.get("POSTGRES_SERVER") or ""
+          ref = user.split(".", 1)[1] if "." in user else ""
+          def hide(s):
+              s = " ".join(str(s).split())
+              return (s.replace(ref, "***") if ref else s)[:220]
+          print("project id in pooler user:", bool(ref), "| port:", cfg.get("POSTGRES_PORT"))
+          if ref:
+              try:
+                  r = urllib.request.urlopen(f"https://{ref}.supabase.co/rest/v1/", timeout=15)
+                  print("project API: HTTP", r.status)
+              except urllib.error.HTTPError as e:
+                  print("project API: HTTP", e.code, hide(e.read()[:150].decode(errors="replace")))
+              except Exception as e:
+                  print("project API: unreachable -", type(e).__name__, hide(e))
+          other = server.replace("aws-1-", "aws-0-") if "aws-1-" in server else server.replace("aws-0-", "aws-1-")
+          for h in dict.fromkeys([server, other]):
+              u = URL.create("postgresql+psycopg2", username=user, password=cfg.get("POSTGRES_PASSWORD"), host=h,
+                             port=int(cfg.get("POSTGRES_PORT") or 5432), database=cfg.get("POSTGRES_DB") or "postgres",
+                             query={"sslmode": "require"})
+              try:
+                  with create_engine(u, connect_args={"connect_timeout": 10}).connect() as c:
+                      c.execute(text("select 1"))
+                  print(h.split(".")[0], "pooler login: OK")
+              except Exception as e:
+                  print(h.split(".")[0], "pooler login: FAILED -", hide(e))
+          ' 2>&1 | tail -6 | mask
+          ENDSSH

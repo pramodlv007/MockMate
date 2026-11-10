@@ -18,6 +18,10 @@ class UserCreate(BaseModel):
     portfolio_url: Optional[str] = None
 
 
+class GoogleLogin(BaseModel):
+    credential: str  # Google ID token (JWT)
+
+
 class ProfileUpdate(BaseModel):
     full_name: Optional[str] = None
     target_role: Optional[str] = None

@@ -39,7 +39,7 @@ export default {
                 }
             },
             fontFamily: {
-                sans: ['Inter', 'sans-serif'],
+                sans: ['Patrick Hand', 'Kalam', 'cursive'],
             },
             animation: {
                 'fade-in':    'fadeIn 0.5s ease-out',
