@@ -142,11 +142,9 @@ jobs:
           chmod 600 ~/.ssh/ec2.pem
           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
 
-      - name: Sync frontend and nginx config
+      # nginx/mockmate.conf is the EC2 host's nginx (frontend/nginx.conf is the container image's, for k8s)
+      - name: Copy nginx config
         run: |
-          SSH="ssh -i ~/.ssh/ec2.pem -o StrictHostKeyChecking=no"
-          rsync -az --delete -e "$SSH" frontend/dist/ \
-            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/${{ secrets.EC2_USER }}/MockMate/frontend/dist/
           scp -i ~/.ssh/ec2.pem -o StrictHostKeyChecking=no nginx/mockmate.conf \
             ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/tmp/mockmate.conf
 
@@ -217,6 +215,12 @@ jobs:
           sudo systemctl reload nginx
           echo "==> Deployed $IMAGE"
           ENDSSH
+
+      # only once the new backend is healthy, so a failed deploy never leaves a new frontend on an old API
+      - name: Sync frontend
+        run: |
+          rsync -az --delete -e "ssh -i ~/.ssh/ec2.pem -o StrictHostKeyChecking=no" frontend/dist/ \
+            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/${{ secrets.EC2_USER }}/MockMate/frontend/dist/
 
       - name: Smoke test
         run: |
