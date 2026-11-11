@@ -48,6 +48,11 @@ jobs:
 
           echo; echo "== docker disk use"
           docker system df
+          echo; echo "== where the disk goes (sizes only)"
+          echo "container log: $(sudo du -h "$(docker inspect --format '{{.LogPath}}' mockmate 2>/dev/null)" 2>/dev/null | cut -f1)"
+          echo "journal: $(sudo journalctl --disk-usage 2>/dev/null | grep -oE '[0-9.]+[KMG]B? ?[A-Za-z]*' | head -1)"
+          sudo du -xh --max-depth=2 / 2>/dev/null | sort -h | tail -14
+          echo "~/MockMate: $(du -sh ~/MockMate 2>/dev/null | cut -f1)   swap: $(swapon --show=NAME,SIZE --noheadings 2>/dev/null | tr '\n' ' ')"
 
           echo; echo "== .env setting names (values not shown), file last changed $(stat -c %y ~/MockMate/.env | cut -d. -f1)"
           grep -oE '^[A-Z_][A-Z0-9_]*=' ~/MockMate/.env | tr -d '=' | sort | tr '\n' ' '; echo
