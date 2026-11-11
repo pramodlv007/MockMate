@@ -2,7 +2,7 @@
 #   --set image.tag=<git sha> --set ingress.host=<domain> --set certManager.email=<email>
 env:
   S3_BUCKET_NAME: mockmate-videos-pramod
-  AWS_DEFAULT_REGION: us-east-1
+  AWS_DEFAULT_REGION: us-east-2
 
 ingress:
   tls:
