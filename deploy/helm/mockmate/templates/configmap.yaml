@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-config
+  labels: {{- include "mockmate.labels" . | nindent 4 }}
+data:
+  REDIS_URL: redis://{{ .Release.Name }}-redis:6379/0
+  {{- if .Values.ingress.host }}
+  FRONTEND_URL: {{ ternary "https" "http" .Values.ingress.tls.enabled }}://{{ .Values.ingress.host }}
+  {{- end }}
+  {{- range $k, $v := .Values.env }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}

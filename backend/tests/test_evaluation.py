@@ -42,6 +42,33 @@ def test_empty_server_transcript_falls_back_to_browser_transcripts(monkeypatch):
     assert patched[0]["overall_score"] == 70 and patched[0]["transcript"] == answer
 
 
+def test_full_pipeline_without_llm_produces_a_result(monkeypatch):
+    """Real grading/composite/synthesis code, no LLM configured: must finish 'evaluated', not crash."""
+    import httpx
+    answer = "I built a payments API in FastAPI that retried failed charges with idempotency keys."
+    class _R:
+        status_code = 200
+        def json(self): return {"questions": [{"transcript": answer}]}
+    async def fake_get(self, url, **kw): return _R()
+    patched = []
+    async def fake_patch(iid, body): patched.append(body)
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+    monkeypatch.setattr(eval_main, "gemini_model", None)
+    monkeypatch.setattr(eval_main, "deepseek_client", None)
+    monkeypatch.setattr(eval_main, "_ensure_local", lambda p: p)
+    monkeypatch.setattr(eval_main, "_transcribe", lambda p: "")
+    monkeypatch.setattr(eval_main, "_analyze_frames", lambda p: {})
+    monkeypatch.setattr(eval_main, "_video_duration", lambda p: 60.0)
+    monkeypatch.setattr(eval_main, "_patch_interview", fake_patch)
+
+    req = eval_main.EvaluateRequest(interview_id="abc", video_path="x.webm", company="Acme", job_description="jd",
+                                    questions=["Tell me about a project."], question_ids=["q1"])
+    asyncio.run(eval_main._evaluate(req))
+
+    assert patched[0]["status"] == "evaluated"
+    assert patched[0]["per_question_data"][0]["question_id"] == "q1"
+
+
 def test_start_evaluation_requires_internal_token(monkeypatch):
     from fastapi.testclient import TestClient
     monkeypatch.setattr(eval_main, "_run_evaluation", lambda req: None)

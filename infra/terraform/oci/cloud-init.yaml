@@ -1,0 +1,28 @@
+#cloud-config
+# Runs once on first boot. Rendered by Terraform templatefile(): $${...} are Terraform values.
+package_update: true
+
+write_files:
+  # k3s applies every manifest in this directory at startup: raises Traefik's 60s upload
+  # read timeout and redirects HTTP to HTTPS (same file `make deploy` applies).
+  - path: /var/lib/rancher/k3s/server/manifests/traefik-config.yaml
+    permissions: "0600"
+    content: |
+      ${indent(6, traefik_config)}
+
+runcmd:
+  # Oracle's Ubuntu image ends INPUT and FORWARD with "REJECT --reject-with icmp-host-prohibited".
+  # That blocks 80/443 and pod-to-pod traffic. The OCI security list is the firewall, so drop them.
+  - sed -i '/--reject-with icmp-host-prohibited/d' /etc/iptables/rules.v4
+  - iptables-restore < /etc/iptables/rules.v4
+
+  # Tailscale first, so the k3s API certificate can include the tailnet IP and name.
+  - curl -fsSL https://tailscale.com/install.sh | sh
+  - tailscale up --authkey='${tailscale_auth_key}' --hostname=mockmate-k3s
+
+  - >-
+    curl -sfL https://get.k3s.io |
+    INSTALL_K3S_VERSION='${k3s_version}' sh -s - server
+    --tls-san mockmate-k3s
+    --tls-san "$(tailscale ip -4)"
+    --write-kubeconfig-mode 600

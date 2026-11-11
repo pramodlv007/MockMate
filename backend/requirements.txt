@@ -32,7 +32,7 @@ pdfplumber
 python-docx
 
 # Video frame extraction (fallback only — Gemini native video is primary)
-moviepy
+moviepy>=2.1,<3                # 2.x import API (from moviepy import VideoFileClip); unpinned, pip fell back to 1.0.3
 Pillow
 
 # AWS SDK

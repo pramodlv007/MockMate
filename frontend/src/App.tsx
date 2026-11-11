@@ -14,7 +14,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import type { ReactNode } from 'react';
 import { TriangleAlert } from 'lucide-react';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 
 // ─── Error Boundary: prevents blank white screen on uncaught React errors ───
 class ErrorBoundary extends Component<

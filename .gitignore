@@ -33,3 +33,11 @@ aws-exports.js
 .idea/
 *.swp
 *.swo
+
+# Terraform: state can contain secrets (e.g. the Tailscale key in OCI user_data); keep it local
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+.terraform.lock.hcl.bak

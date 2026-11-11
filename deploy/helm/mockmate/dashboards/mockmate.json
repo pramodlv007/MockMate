@@ -1,0 +1,85 @@
+{
+  "title": "MockMate",
+  "uid": "mockmate",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": {"from": "now-24h", "to": "now"},
+  "refresh": "30s",
+  "templating": {
+    "list": [
+      {"name": "datasource", "type": "datasource", "query": "prometheus", "label": "Data source"}
+    ]
+  },
+  "panels": [
+    {
+      "type": "timeseries", "title": "API latency (all routes, excl. /health and /metrics)",
+      "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "targets": [
+        {"refId": "A", "legendFormat": "p50", "expr": "histogram_quantile(0.50, sum by (le) (rate(mockmate_http_request_duration_seconds_bucket{route!~\"/health|/metrics.*\"}[5m])))"},
+        {"refId": "B", "legendFormat": "p95", "expr": "histogram_quantile(0.95, sum by (le) (rate(mockmate_http_request_duration_seconds_bucket{route!~\"/health|/metrics.*\"}[5m])))"},
+        {"refId": "C", "legendFormat": "p99", "expr": "histogram_quantile(0.99, sum by (le) (rate(mockmate_http_request_duration_seconds_bucket{route!~\"/health|/metrics.*\"}[5m])))"}
+      ]
+    },
+    {
+      "type": "timeseries", "title": "API p95 latency by route",
+      "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "targets": [
+        {"refId": "A", "legendFormat": "{{method}} {{route}}", "expr": "histogram_quantile(0.95, sum by (le, method, route) (rate(mockmate_http_request_duration_seconds_bucket{route!~\"/health|/metrics.*\"}[5m])))"}
+      ]
+    },
+    {
+      "type": "stat", "title": "Eval queue depth",
+      "gridPos": {"x": 0, "y": 8, "w": 6, "h": 6},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "targets": [{"refId": "A", "expr": "max(mockmate_eval_queue_depth)"}]
+    },
+    {
+      "type": "stat", "title": "Eval success rate (24h, final outcomes)",
+      "gridPos": {"x": 6, "y": 8, "w": 6, "h": 6},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}, "overrides": []},
+      "targets": [{"refId": "A", "expr": "sum(increase(mockmate_eval_jobs_total{outcome=\"success\"}[24h])) / sum(increase(mockmate_eval_jobs_total{outcome=~\"success|failure\"}[24h]))"}]
+    },
+    {
+      "type": "stat", "title": "Interviews created (last 24h)",
+      "gridPos": {"x": 12, "y": 8, "w": 6, "h": 6},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {"defaults": {"decimals": 0}, "overrides": []},
+      "targets": [{"refId": "A", "expr": "sum(increase(mockmate_interviews_created_total[24h]))"}]
+    },
+    {
+      "type": "timeseries", "title": "Interviews per day",
+      "gridPos": {"x": 18, "y": 8, "w": 6, "h": 6},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "targets": [{"refId": "A", "legendFormat": "interviews", "interval": "1d", "expr": "sum(increase(mockmate_interviews_created_total[1d]))"}]
+    },
+    {
+      "type": "timeseries", "title": "Eval job duration",
+      "gridPos": {"x": 0, "y": 14, "w": 8, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "targets": [
+        {"refId": "A", "legendFormat": "p50", "expr": "histogram_quantile(0.50, sum by (le) (rate(mockmate_eval_job_duration_seconds_bucket[1h])))"},
+        {"refId": "B", "legendFormat": "p95", "expr": "histogram_quantile(0.95, sum by (le) (rate(mockmate_eval_job_duration_seconds_bucket[1h])))"}
+      ]
+    },
+    {
+      "type": "timeseries", "title": "LLM p95 latency by provider / operation",
+      "gridPos": {"x": 8, "y": 14, "w": 8, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "targets": [{"refId": "A", "legendFormat": "{{provider}} {{op}}", "expr": "histogram_quantile(0.95, sum by (le, provider, op) (rate(mockmate_llm_call_duration_seconds_bucket[15m])))"}]
+    },
+    {
+      "type": "timeseries", "title": "LLM error rate by provider / operation",
+      "gridPos": {"x": 16, "y": 14, "w": 8, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}, "overrides": []},
+      "targets": [{"refId": "A", "legendFormat": "{{provider}} {{op}}", "expr": "sum by (provider, op) (rate(mockmate_llm_call_errors_total[15m])) / sum by (provider, op) (rate(mockmate_llm_call_duration_seconds_count[15m]))"}]
+    }
+  ]
+}
