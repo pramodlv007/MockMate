@@ -168,6 +168,12 @@ jobs:
           # 8 GB disk can't fit the new image next to old leftovers; images the current container uses are kept, so rollback still works
           docker image prune -af >/dev/null
           docker builder prune -af >/dev/null 2>&1 || true
+          # The outgoing container's log goes when it is replaced anyway; empty it now so the pull has room
+          # (a months-long crash loop left 1.8 GB there). Keep the journal's last 100 MB.
+          OLD_LOG=$(docker inspect --format '{{.LogPath}}' mockmate 2>/dev/null || true)
+          if [ -n "$OLD_LOG" ]; then sudo truncate -s 0 "$OLD_LOG"; fi
+          sudo journalctl --vacuum-size=100M >/dev/null 2>&1 || true
+          echo "==> Free before pull: $(df -h / | awk 'NR==2 {print $4}')"
 
           echo "==> Pulling $IMAGE"
           docker pull "$IMAGE"
@@ -183,7 +189,9 @@ jobs:
             sudo install -m 0400 -o 10001 -g 10001 backend/.env backend/.env.container
             ENV_MOUNT="-v $HOME/MockMate/backend/.env.container:/app/.env:ro"
           fi
-          run() { docker run -d --name mockmate --env-file .env $ENV_MOUNT -p 8000:8000 --restart unless-stopped "$1"; }
+          # logs capped at 3 x 20 MB so a crash loop can never fill the disk again
+          run() { docker run -d --name mockmate --env-file .env $ENV_MOUNT --log-opt max-size=20m --log-opt max-file=3 \
+                    -p 8000:8000 --restart unless-stopped "$1"; }
           healthy() {
             for i in $(seq 1 15); do
               curl -sf localhost:8000/health | grep -q '"ok"' && return 0
