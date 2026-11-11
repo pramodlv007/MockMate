@@ -176,8 +176,13 @@ jobs:
           PREV=$(docker inspect --format '{{.Config.Image}}' mockmate 2>/dev/null || true)
           # backend/.env holds the DB, Gemini and JWT settings; old server-built images had it baked in at /app/.env.
           # Mounting it at the same path makes every module resolve settings exactly as the old deploy did.
+          # The image runs as uid 10001, which may not be able to read ec2-user's file: hand it a 0400 copy it owns
+          # (refreshed every deploy; root in the old image can still read it on a rollback).
           ENV_MOUNT=""
-          if [ -f backend/.env ]; then ENV_MOUNT="-v $HOME/MockMate/backend/.env:/app/.env:ro"; fi
+          if [ -f backend/.env ]; then
+            sudo install -m 0400 -o 10001 -g 10001 backend/.env backend/.env.container
+            ENV_MOUNT="-v $HOME/MockMate/backend/.env.container:/app/.env:ro"
+          fi
           run() { docker run -d --name mockmate --env-file .env $ENV_MOUNT -p 8000:8000 --restart unless-stopped "$1"; }
           healthy() {
             for i in $(seq 1 15); do
