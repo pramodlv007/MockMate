@@ -1,8 +1,11 @@
+# One image, two roles: the API (default CMD) and the eval worker (Helm overrides the command).
+# Multi-arch (amd64/arm64): python:3.11-slim and every wheel in requirements.txt exist for both.
 FROM python:3.11-slim
 WORKDIR /app
+ENV PYTHONUNBUFFERED=1
 
-# Install system dependencies (for moviepy/Pillow)
-RUN apt-get update && apt-get install -y \
+# ffmpeg: video duration + frame fallback; libpq/gcc: psycopg2 build fallback
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     libpq-dev \
     gcc \
@@ -13,7 +16,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-EXPOSE 8000
+# Non-root, numeric uid so Kubernetes can enforce runAsNonRoot.
+RUN useradd --uid 10001 --no-create-home app && mkdir -p uploads/videos && chown -R 10001 uploads
+USER 10001
 
+EXPOSE 8000
 # Single process — all services mounted under one uvicorn
 CMD ["uvicorn", "app_consolidated:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
