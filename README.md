@@ -70,38 +70,29 @@ MockMate is a full end-to-end interview simulation platform. You pick a company,
 
 ## Architecture
 
-MockMate runs as a **consolidated FastAPI application** — all microservices mounted as sub-apps in a single process, deployed on AWS EC2 behind nginx.
+MockMate runs on a single-node **k3s** Kubernetes cluster on Oracle Cloud's Always Free Arm VM. The backend is
+one FastAPI image used two ways: the **api** Deployment (all services mounted in one process) and the
+**eval-worker** Deployment, which runs evaluations from a Redis queue so a slow Gemini call never blocks requests.
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                  React Frontend (Vite + TS)                  │
-│        Auth · Profile · Interview Room · Results             │
-└──────────────────────────┬──────────────────────────────────┘
-                           │ HTTP  (nginx :80)
-                           ▼
-┌─────────────────────────────────────────────────────────────┐
-│               nginx  (EC2 port 80)                           │
-│   Static files → frontend/dist                               │
-│   /auth /users /profile /interviews /rubric … → :8000        │
-└──────────────────────────┬──────────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────────┐
-│         Consolidated FastAPI App  (Docker :8000)             │
-│                                                              │
-│  /auth/*        → Auth Service    (signup, login, refresh)   │
-│  /users/*       → Auth Service    (profile CRUD)             │
-│  /profile/*     → Profile Service (resume upload, GitHub)    │
-│  /questions/*   → Question Service (AI question generation)  │
-│  /interviews/*  → Interview Service (sessions, video upload) │
-│  /evaluation/*  → Evaluation Service (AI scoring pipeline)   │
-│  /rubric/*      → Rubric Service  (single-question practice) │
-└──────────────────────────┬──────────────────────────────────┘
-                           │
-              ┌────────────┼────────────┐
-              ▼            ▼            ▼
-       Supabase DB      AWS S3       Gemini 2.5
-      (PostgreSQL)    (Videos)      Flash API
+```mermaid
+flowchart LR
+    U[Browser] -->|HTTPS 443| T[Traefik Ingress<br/>+ cert-manager TLS]
+    subgraph k3s["k3s on OCI Ampere A1 (2 OCPU / 12 GB, Always Free)"]
+        T -->|"/auth /interviews /rubric ..."| API[api<br/>FastAPI, HPA 1-3]
+        T -->|everything else| FE[frontend<br/>nginx + React build]
+        API -->|enqueue eval job| R[(redis<br/>queue + rate limits)]
+        R --> W[eval-worker<br/>arq]
+        W -->|PATCH results| API
+        P[Prometheus + Grafana] -.scrape /metrics.-> API
+        P -.scrape :9100.-> W
+    end
+    API --> DB[(Supabase Postgres)]
+    API -->|upload video| S3[(AWS S3<br/>30-day expiry)]
+    W -->|download video| S3
+    API --> G[Gemini API]
+    W --> G
+    CI[GitHub Actions] -->|images| GHCR[(GHCR)]
+    CI -->|helm upgrade via Tailscale| k3s
 ```
 
 ### Service Breakdown
@@ -115,14 +106,14 @@ MockMate runs as a **consolidated FastAPI application** — all microservices mo
 | `/evaluation/*` | AI evaluation pipeline. Internal only |
 | `/rubric/*` | Practice mode: one question, graded against a fixed rubric (`services/rubric/bank.json`) |
 
-"Internal only" endpoints require the `X-Internal-Token` header (`INTERNAL_API_TOKEN`); the services call
-each other over `localhost` inside the one process.
+"Internal only" endpoints require the `X-Internal-Token` header (`INTERNAL_API_TOKEN`); inside the api pod
+the services call each other over `localhost`, and the worker calls the api Service.
 
 ---
 
 ## GenAI Pipeline
 
-MockMate's evaluation runs as a background task after the video upload, powered by Gemini 2.5 Flash.
+MockMate's evaluation runs as a queued job after the video upload (Redis + arq, retried 3x with backoff), powered by Gemini 2.5 Flash.
 
 ```
 Video upload (S3, or local disk in dev)
@@ -172,39 +163,82 @@ Any failure marks the session `error`, which the Results page shows instead of a
 
 ## Infrastructure & Deployment
 
-MockMate is deployed on **AWS** with a CI/CD pipeline via GitHub Actions (`.github/workflows/deploy.yml`).
+| Piece | Where | Notes |
+|---|---|---|
+| Cluster | k3s v1.31.4 on one OCI `VM.Standard.A1.Flex` | Terraform: `infra/terraform/oci/` |
+| App | Helm chart `deploy/helm/mockmate/` | api (HPA 1-3), eval-worker, frontend, redis (PVC) |
+| TLS | cert-manager + Let's Encrypt HTTP-01 | HTTP redirects to HTTPS (`deploy/k3s/traefik-config.yaml`) |
+| Monitoring | kube-prometheus-stack, 7-day retention | Dashboard: `deploy/helm/mockmate/dashboards/mockmate.json` |
+| Cluster access | Tailscale | The k3s API (6443) is never opened to the internet |
+| AWS | S3 videos, least-privilege IAM user, $20 budget alert | Terraform: `infra/terraform/aws/` |
+
+### CI/CD (`.github/workflows/deploy.yml`)
 
 ```
 every push / PR
-  ├── test   — backend pytest (backend/tests, rubric_eval) + frontend build; fails the run on any failure
-  └── image  — build backend Docker image, smoke-test it against Postgres, push to GHCR (tagged with the SHA)
-push to main only
-  └── deploy — rsync frontend/dist + nginx config to EC2, pull the tested image, swap the container,
-               roll back to the previous image if the health check fails, then smoke-test the live site
+  ├── test    — backend pytest + frontend build + helm lint
+  └── images  — backend image smoke-tested against Postgres (health, /metrics, signup, worker import),
+                then backend + frontend built for linux/amd64 + linux/arm64, pushed to GHCR tagged with the SHA
+push to main, once repo variable DOMAIN is set
+  └── deploy  — runner joins the tailnet, helm upgrade --atomic to that SHA (auto-rollback), HTTPS smoke test
 ```
 
-`.github/workflows/diagnose.yml` is a manual, read-only EC2 health check. `aws/setup-https.sh` sets up
-Let's Encrypt on the server.
+### Metrics
 
-### AWS Stack
+`GET /metrics/` on the api (not routed by the Ingress, so not public) and `:9100/metrics` on the worker:
+per-route latency histogram, interviews created, eval job duration and outcomes (success / retry / failure),
+LLM latency and errors by provider and operation, eval queue depth. `make grafana` opens the dashboard.
 
-| Component | Service | Purpose |
-|---|---|---|
-| Compute | EC2 t2.micro | Runs Docker container (FastAPI + nginx) |
-| Storage | S3 (`mockmate-videos-pramod`) | Interview video files |
-| Database | Supabase PostgreSQL | Users, sessions, questions, scores |
-| Web server | nginx | Static file serving + API reverse proxy |
-| Container | Docker | Isolated, reproducible backend runtime |
+### Deploy from scratch
+
+Prerequisites: an OCI account (Always Free), the OCI CLI config (`~/.oci/config`), a Tailscale account,
+terraform, helm, kubectl, a domain you can point at an IP.
+
+```bash
+# 1. VM + k3s. Tailscale: create a one-off auth key, and add tags tag:k3s / tag:ci to your ACL.
+cp infra/terraform/oci/terraform.tfvars.example infra/terraform/oci/terraform.tfvars   # fill it in
+export TF_VAR_tailscale_auth_key=tskey-auth-...
+make infra-up                      # prints the public IP and the kubeconfig command
+
+# 2. DNS: A record for your domain -> that IP. Kubeconfig as printed by step 1.
+
+# 3. AWS: IAM user + 30-day expiry + budget alert, then a key for the user straight into the cluster
+terraform -chdir=infra/terraform/aws apply -var bucket_name=mockmate-videos-pramod -var budget_email=you@example.com
+kubectl create namespace mockmate
+aws iam create-access-key --user-name mockmate-k8s   # copy the two values into the Secret below
+
+# 4. App secrets (never in git)
+kubectl -n mockmate create secret generic mockmate-secrets   --from-literal=SECRET_KEY=$(openssl rand -hex 32) --from-literal=REFRESH_SECRET_KEY=$(openssl rand -hex 32)   --from-literal=INTERNAL_API_TOKEN=$(openssl rand -hex 32)   --from-literal=POSTGRES_USER=... --from-literal=POSTGRES_PASSWORD=... --from-literal=POSTGRES_SERVER=...   --from-literal=POSTGRES_PORT=6543 --from-literal=POSTGRES_DB=postgres   --from-literal=GOOGLE_API_KEY=... --from-literal=GOOGLE_CLIENT_ID=...   --from-literal=AWS_ACCESS_KEY_ID=... --from-literal=AWS_SECRET_ACCESS_KEY=...
+kubectl create namespace monitoring
+kubectl -n monitoring create secret generic grafana-admin   --from-literal=admin-user=admin --from-literal=admin-password=$(openssl rand -hex 12)
+
+# 5. cert-manager, monitoring, app
+make deploy DOMAIN=mockmate.example.com EMAIL=you@example.com
+
+# 6. CI: secrets KUBECONFIG_B64, TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET; variables DOMAIN, LETSENCRYPT_EMAIL
+make status
+```
+
+If the node can't pull `ghcr.io/pramodlv007/mockmate-frontend`, set that package's visibility to public in
+GitHub (Packages → package settings). The backend package already pulls anonymously.
+
+Teardown: `make infra-down` (VM, network, reserved IP; prints the remaining Terraform state, which should be empty).
 
 ### Cost
 
-| Service | Cost |
-|---|---|
-| EC2 t2.micro | Free tier (12 months) |
-| S3 | Free tier (5 GB) |
-| Supabase | Free |
-| GitHub Actions | Free |
-| **Total** | **$0/month** (free tier) |
+Expected monthly cost from the providers' published free allowances, **not yet from a real bill**.
+Replace with actual billing figures after the first full month.
+
+| Service | What we use | Expected cost |
+|---|---|---|
+| OCI Compute | 1x A1.Flex, 2 OCPU / 12 GB (= the whole Always Free A1 allowance) | $0 |
+| OCI Block storage | 100 GB boot volume (Always Free: 200 GB total) | $0 |
+| OCI Networking | 1 reserved public IP (check *Limits, Quotas and Usage* in your tenancy) | $0 |
+| AWS S3 | Interview videos, deleted after 30 days | Free tier first 12 months, then per-GB storage + requests |
+| Supabase | Postgres | Free plan |
+| GHCR / GitHub Actions | Public repo | $0 |
+| Tailscale | Personal plan | $0 |
+| Gemini API | Questions, transcription, evaluation | Depends on your Gemini plan and usage; not measured yet |
 
 ---
 
@@ -213,16 +247,10 @@ Let's Encrypt on the server.
 - **Consent:** users must tick a consent box on the interview setup page before anything is recorded.
 - **Deletion:** `DELETE /interviews/{id}` (the **Delete** button in History) removes the S3 recording, then the
   session and its questions from the database. Only the owner can delete.
-- **Retention:** recordings in S3 expire after 30 days. Apply this lifecycle rule once per bucket. It is not set by
-  the app or CI, so the consent text is only true once you have run it:
-
-```bash
-aws s3api put-bucket-lifecycle-configuration --bucket mockmate-videos-pramod \
-  --lifecycle-configuration '{"Rules":[{"ID":"expire-recordings-30d","Status":"Enabled",
-    "Filter":{"Prefix":"videos/"},"Expiration":{"Days":30}}]}'
-# verify
-aws s3api get-bucket-lifecycle-configuration --bucket mockmate-videos-pramod
-```
+- **Retention:** recordings in S3 expire after 30 days, via the lifecycle rule in `infra/terraform/aws/`
+  (`terraform -chdir=infra/terraform/aws apply`). It is not set by the app or CI, so the consent text is only
+  true once that has been applied. Verify with
+  `aws s3api get-bucket-lifecycle-configuration --bucket mockmate-videos-pramod`.
 
   Expiry removes the video only; the session's transcript and scores stay until the user deletes the interview.
 - **Third parties:** recordings are uploaded to Google Gemini for transcription and body-language analysis;
