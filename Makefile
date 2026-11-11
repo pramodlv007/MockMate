@@ -7,6 +7,7 @@
 SHELL      := bash
 TAG        ?= $(shell git rev-parse HEAD)
 NS         ?= mockmate
+DOMAIN     ?= mockmate.site
 OCI_DIR    := infra/terraform/oci
 AWS_DIR    := infra/terraform/aws
 CHART      := deploy/helm/mockmate
