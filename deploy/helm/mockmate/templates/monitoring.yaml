@@ -1,0 +1,31 @@
+{{- if .Values.monitoring.podMonitor }}
+# Tells the Prometheus Operator to scrape the api (:8000/metrics/) and worker (:9100/metrics) pods.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ .Release.Name }}
+  labels: {{- include "mockmate.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels: {app.kubernetes.io/instance: {{ .Release.Name }}}
+    # Only pods that expose metrics; otherwise frontend/redis show up as permanently-down targets.
+    matchExpressions:
+      - {key: app.kubernetes.io/component, operator: In, values: [api, worker]}
+  podMetricsEndpoints:
+    - {port: http, path: /metrics/, interval: 30s}
+    - {port: metrics, path: /metrics, interval: 30s}
+{{- end }}
+{{- if .Values.monitoring.dashboard }}
+---
+# The Grafana sidecar loads any ConfigMap labelled grafana_dashboard=1 as a dashboard.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-dashboard
+  labels:
+    {{- include "mockmate.labels" . | nindent 4 }}
+    grafana_dashboard: "1"
+data:
+  mockmate.json: |-
+{{ .Files.Get "dashboards/mockmate.json" | indent 4 }}
+{{- end }}

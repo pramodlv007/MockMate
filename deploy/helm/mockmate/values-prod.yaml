@@ -1,0 +1,16 @@
+# Production overrides (Oracle k3s). `make deploy` passes these plus:
+#   --set image.tag=<git sha> --set ingress.host=<domain> --set certManager.email=<email>
+env:
+  S3_BUCKET_NAME: mockmate-videos-pramod
+  AWS_DEFAULT_REGION: us-east-1
+
+ingress:
+  tls:
+    enabled: true
+
+certManager:
+  createClusterIssuer: true
+
+monitoring:
+  podMonitor: true
+  dashboard: true

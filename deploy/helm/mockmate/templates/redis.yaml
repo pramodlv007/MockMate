@@ -1,0 +1,58 @@
+# Evaluation queue + shared rate-limit counters. One replica; AOF on a PVC so queued jobs survive restarts.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-redis
+  labels: {{- include "mockmate.labels" . | nindent 4 }}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: {{ .Values.redis.storage }}}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-redis
+  labels:
+    {{- include "mockmate.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+spec:
+  replicas: 1
+  strategy: {type: Recreate}   # RWO volume: the old pod must release it before the new one mounts it
+  selector:
+    matchLabels: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: redis}
+  template:
+    metadata:
+      labels:
+        {{- include "mockmate.labels" . | nindent 8 }}
+        app.kubernetes.io/component: redis
+    spec:
+      securityContext: {fsGroup: 999}
+      containers:
+        - name: redis
+          image: {{ .Values.redis.image }}
+          # noeviction: when memory is full, fail the enqueue loudly instead of silently dropping queued jobs.
+          args: [--appendonly, "yes", --maxmemory, 200mb, --maxmemory-policy, noeviction]
+          ports: [{name: redis, containerPort: 6379}]
+          readinessProbe:
+            exec: {command: [redis-cli, ping]}
+            periodSeconds: 10
+          livenessProbe:
+            exec: {command: [redis-cli, ping]}
+            periodSeconds: 30
+          volumeMounts: [{name: data, mountPath: /data}]
+          resources: {{- toYaml .Values.redis.resources | nindent 12 }}
+          securityContext:
+            runAsUser: 999
+            {{- include "mockmate.securityContext" . | nindent 12 }}
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: {{ .Release.Name }}-redis}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-redis
+  labels: {{- include "mockmate.labels" . | nindent 4 }}
+spec:
+  selector: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: redis}
+  ports: [{name: redis, port: 6379, targetPort: redis}]

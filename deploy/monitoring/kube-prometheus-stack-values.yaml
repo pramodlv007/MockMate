@@ -1,0 +1,56 @@
+# kube-prometheus-stack, trimmed for a single 12 GB k3s node. Checked against chart 93.1.1.
+# Install: make monitoring   (namespace "monitoring")
+
+# No alert routing yet, and it costs ~100 MB.
+alertmanager:
+  enabled: false
+
+# k3s runs etcd/scheduler/controller-manager/proxy inside the k3s binary, not as scrapeable pods;
+# leaving these on just produces permanently-down targets.
+kubeEtcd: {enabled: false}
+kubeScheduler: {enabled: false}
+kubeControllerManager: {enabled: false}
+kubeProxy: {enabled: false}
+
+prometheus:
+  prometheusSpec:
+    retention: 7d
+    retentionSize: 4GB
+    # Pick up PodMonitors from any release (our chart's), not only ones labelled for this Helm release.
+    podMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorSelectorNilUsesHelmValues: false
+    resources:
+      requests: {cpu: 100m, memory: 400Mi}
+      limits: {cpu: "1", memory: 1500Mi}
+    # Survives pod restarts; k3s's local-path provisioner backs this with node disk.
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: [ReadWriteOnce]
+          resources: {requests: {storage: 5Gi}}
+
+prometheusOperator:
+  resources:
+    requests: {cpu: 20m, memory: 64Mi}
+    limits: {cpu: 200m, memory: 192Mi}
+
+grafana:
+  # Reached via `make grafana` (port-forward), never exposed publicly.
+  admin:
+    existingSecret: grafana-admin     # keys admin-user / admin-password; created by `make secrets`
+  resources:
+    requests: {cpu: 25m, memory: 128Mi}
+    limits: {cpu: 500m, memory: 384Mi}
+  sidecar:
+    dashboards:
+      searchNamespace: ALL            # load the MockMate dashboard ConfigMap from the app namespace
+
+kube-state-metrics:
+  resources:
+    requests: {cpu: 10m, memory: 48Mi}
+    limits: {cpu: 100m, memory: 128Mi}
+
+prometheus-node-exporter:
+  resources:
+    requests: {cpu: 10m, memory: 24Mi}
+    limits: {cpu: 100m, memory: 64Mi}

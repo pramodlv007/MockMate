@@ -1,0 +1,65 @@
+# Defaults sized for the 2 OCPU / 12 GB Oracle Always Free node.
+# Secrets are NOT here: create the Secret named by `secretName` out of band (see README).
+
+image:
+  backend: ghcr.io/pramodlv007/mockmate-backend
+  frontend: ghcr.io/pramodlv007/mockmate-frontend
+  tag: latest            # CI sets this to the git SHA
+  pullPolicy: IfNotPresent
+
+# Keys: SECRET_KEY, REFRESH_SECRET_KEY, INTERNAL_API_TOKEN, POSTGRES_USER/PASSWORD/SERVER/PORT/DB,
+# GOOGLE_API_KEY, GOOGLE_CLIENT_ID, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+secretName: mockmate-secrets
+
+# Non-secret settings shared by api + worker
+env:
+  ALGORITHM: HS256
+  ACCESS_TOKEN_EXPIRE_MINUTES: "30"
+  REFRESH_TOKEN_EXPIRE_DAYS: "7"
+  S3_BUCKET_NAME: ""
+  AWS_DEFAULT_REGION: us-east-1
+  UPLOAD_RATE_LIMIT: 3/hour
+  MAX_INTERVIEWS_PER_DAY: "10"
+
+api:
+  hpa: {minReplicas: 1, maxReplicas: 3, targetCPU: 70}
+  resources:
+    requests: {cpu: 250m, memory: 384Mi}
+    limits: {cpu: "1", memory: 1Gi}
+
+worker:
+  replicas: 1
+  resources:
+    requests: {cpu: 250m, memory: 512Mi}
+    limits: {cpu: "1", memory: 1536Mi}   # holds one interview video + ffmpeg
+
+frontend:
+  replicas: 1
+  resources:
+    requests: {cpu: 10m, memory: 16Mi}
+    limits: {cpu: 200m, memory: 128Mi}
+
+redis:
+  image: redis:7.4-alpine
+  storage: 1Gi           # AOF on a PVC, so queued jobs survive a Redis restart
+  resources:
+    requests: {cpu: 25m, memory: 32Mi}
+    limits: {cpu: 250m, memory: 256Mi}
+
+ingress:
+  enabled: true
+  className: traefik     # bundled with k3s
+  host: ""               # e.g. mockmate.example.com; empty = match any host (local testing)
+  tls:
+    enabled: false
+    clusterIssuer: letsencrypt-prod
+  # Everything else goes to the frontend. /metrics is deliberately not listed, so it is not public.
+  apiPaths: [/auth, /users, /profile, /interviews, /questions, /evaluation, /rubric, /health, /warmup]
+
+certManager:
+  createClusterIssuer: false
+  email: ""              # Let's Encrypt expiry notices
+
+monitoring:
+  podMonitor: false      # needs the kube-prometheus-stack CRDs installed first
+  dashboard: false       # ConfigMap picked up by the Grafana dashboard sidecar

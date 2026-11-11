@@ -1,0 +1,19 @@
+# Overrides for the Traefik that k3s installs (chart 27 / Traefik 2.11 on k3s v1.31.4).
+# k3s watches HelmChartConfig objects and re-renders its bundled Traefik with these values.
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    additionalArguments:
+      # Default is 60s for reading the whole request, too short for an interview video on a slow uplink.
+      - "--entrypoints.web.transport.respondingtimeouts.readtimeout=600s"
+      - "--entrypoints.websecure.transport.respondingtimeouts.readtimeout=600s"
+    ports:
+      web:
+        # The refresh-token cookie is Secure in production, so plain HTTP must not serve the app.
+        # Let's Encrypt HTTP-01 still works: it follows redirects to HTTPS.
+        redirectTo:
+          port: websecure
