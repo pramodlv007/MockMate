@@ -1,18 +1,18 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# MockMate — CI/CD (GitHub Actions → GHCR → AWS EC2)
+# MockMate — CI/CD (GitHub Actions → GHCR → k3s on Oracle Cloud)
 #
 # Every commit, any branch:
-#   test   — backend unit tests + frontend build
-#   image  — build the backend Docker image, smoke-test it against Postgres,
-#            push it to ghcr.io tagged with the commit SHA
-# Push to main only:
-#   deploy — EC2 pulls that exact tested image, swaps the container,
-#            rolls back to the previous image if the health check fails
+#   test    — backend unit tests + frontend build
+#   images  — backend image smoke-tested against Postgres, then backend + frontend
+#             built for linux/amd64 + linux/arm64 and pushed to GHCR tagged with the git SHA
+# Push to main, once the cluster exists (repo variable DOMAIN set):
+#   deploy  — joins the tailnet, `helm upgrade` to that SHA, HTTPS smoke test
 #
-# Required GitHub Secrets: EC2_HOST, EC2_USER, EC2_SSH_KEY, VITE_API_URL
-# Optional: VITE_GOOGLE_CLIENT_ID (Google sign-in button; backend also needs GOOGLE_CLIENT_ID in EC2 .env)
-# The registry login uses the built-in GITHUB_TOKEN; no extra secret needed.
-# EC2 keeps its runtime config in ~/MockMate/.env (never baked into the image).
+# Secrets:   KUBECONFIG_B64 (base64 kubeconfig, server https://mockmate-k3s:6443),
+#            TS_OAUTH_CLIENT_ID / TS_OAUTH_SECRET (Tailscale OAuth client, tag:ci),
+#            VITE_GOOGLE_CLIENT_ID (optional, public client id baked into the frontend)
+# Variables: DOMAIN, LETSENCRYPT_EMAIL
+# App secrets (DB, Gemini, AWS) live only in the cluster's mockmate-secrets Secret.
 # ─────────────────────────────────────────────────────────────────────────────
 
 name: MockMate CI/CD
@@ -29,7 +29,8 @@ concurrency:
 
 env:
   # GHCR names must be lowercase; repository_owner (pramodlv007) already is
-  IMAGE: ghcr.io/${{ github.repository_owner }}/mockmate-backend:${{ github.sha }}
+  BACKEND_IMAGE: ghcr.io/${{ github.repository_owner }}/mockmate-backend
+  FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/mockmate-frontend
 
 jobs:
   test:
@@ -54,17 +55,15 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Build frontend
         run: cd frontend && npm ci && npm run build
-        env:
-          VITE_API_URL: ${{ secrets.VITE_API_URL }}
-          VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
-      - uses: actions/upload-artifact@v4
-        with:
-          name: frontend-dist
-          path: frontend/dist
-          retention-days: 1
 
-  image:
-    name: Docker image
+      - name: Lint Helm chart
+        run: |
+          helm lint deploy/helm/mockmate
+          helm lint deploy/helm/mockmate -f deploy/helm/mockmate/values-prod.yaml \
+            --set ingress.host=ci.example.com --set certManager.email=ci@example.com
+
+  images:
+    name: Docker images
     needs: test
     runs-on: ubuntu-latest
     permissions:
@@ -83,125 +82,119 @@ jobs:
           --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3      # emulates arm64 for the Oracle Ampere node
       - uses: docker/setup-buildx-action@v3
 
-      - name: Build image
+      # Smoke-test the amd64 build first; a multi-arch build can't be loaded into the local daemon.
+      - name: Build backend (amd64, for smoke test)
         uses: docker/build-push-action@v6
         with:
           context: backend
           file: backend/Dockerfile.consolidated
           load: true
-          tags: ${{ env.IMAGE }}
-          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: mockmate-backend:smoke
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
 
-      - name: Smoke test image
+      - name: Smoke test backend image
         run: |
-          docker run -d --name smoke --network host "$IMAGE"
+          docker run -d --name smoke --network host mockmate-backend:smoke
           for i in $(seq 1 30); do
             curl -sf localhost:8000/health && break
             sleep 2
           done
           curl -sf localhost:8000/health | grep -q '"ok"'
           curl -sf localhost:8000/rubric/health | grep -q '"ok"'
+          curl -sf localhost:8000/metrics/ | grep -q mockmate_http_request_duration_seconds
           # a real DB write catches schema drift (the old signup 500)
           curl -sf -X POST localhost:8000/auth/signup -H 'Content-Type: application/json' \
             -d "{\"email\":\"ci-${GITHUB_RUN_ID}@example.com\",\"password\":\"Passw0rd!x\",\"full_name\":\"CI\"}" \
             | grep -q access_token
+          # the worker entrypoint must at least import
+          docker run --rm --entrypoint python mockmate-backend:smoke -c "import services.evaluation.queue as q; print(q.WorkerSettings.functions)"
           echo "Smoke test passed"
       - name: Container logs on failure
         if: failure()
         run: docker logs smoke --tail 80 || true
 
-      - name: Push image to GHCR
+      - name: Log in to GHCR
         if: github.event_name == 'push'
-        run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-          docker push "$IMAGE"
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push backend (amd64 + arm64)
+        if: github.event_name == 'push'
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          file: backend/Dockerfile.consolidated
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ env.BACKEND_IMAGE }}:${{ github.sha }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+      - name: Push frontend (amd64 + arm64)
+        if: github.event_name == 'push'
+        uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            VITE_GOOGLE_CLIENT_ID=${{ secrets.VITE_GOOGLE_CLIENT_ID }}
+          tags: ${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
 
   deploy:
-    name: Deploy to EC2
-    needs: image
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    name: Deploy to k3s
+    needs: images
+    # DOMAIN is set as a repo variable only once the cluster is up, so main doesn't fail before then.
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && vars.DOMAIN != ''
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: read
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+
+      # The k3s API (6443) is only reachable on the tailnet; this runner joins it for the job.
+      - uses: tailscale/github-action@v3
         with:
-          name: frontend-dist
-          path: frontend/dist
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
 
-      - name: Write SSH key
+      - name: Kubeconfig
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/ec2.pem
-          chmod 600 ~/.ssh/ec2.pem
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG_B64 }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+          kubectl get nodes
 
-      - name: Sync frontend and nginx config
+      # Helm rolls the pods; --wait + --atomic roll back automatically if new pods never get ready.
+      - name: Helm upgrade
         run: |
-          SSH="ssh -i ~/.ssh/ec2.pem -o StrictHostKeyChecking=no"
-          rsync -az --delete -e "$SSH" frontend/dist/ \
-            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/${{ secrets.EC2_USER }}/MockMate/frontend/dist/
-          scp -i ~/.ssh/ec2.pem -o StrictHostKeyChecking=no nginx/mockmate.conf \
-            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/tmp/mockmate.conf
+          helm upgrade --install mockmate deploy/helm/mockmate -n mockmate --create-namespace \
+            -f deploy/helm/mockmate/values.yaml -f deploy/helm/mockmate/values-prod.yaml \
+            --set image.tag=${{ github.sha }} \
+            --set ingress.host=${{ vars.DOMAIN }} \
+            --set certManager.email=${{ vars.LETSENCRYPT_EMAIL }} \
+            --wait --atomic --timeout 10m
 
-      - name: Deploy backend container
+      - name: Smoke test (HTTPS)
         run: |
-          SSH="ssh -i ~/.ssh/ec2.pem -o StrictHostKeyChecking=no -o ServerAliveInterval=30 ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}"
-          # token goes over stdin, never on the remote command line; it expires when this job ends
-          echo "${{ secrets.GITHUB_TOKEN }}" | $SSH "docker login ghcr.io -u ${{ github.actor }} --password-stdin"
-          $SSH "IMAGE=$IMAGE bash -s" << 'ENDSSH'
-          set -e
-          cd ~/MockMate
-
-          # certbot rewrites the nginx config once SSL is on; only install ours before that
-          if [ ! -f /etc/letsencrypt/live/*/fullchain.pem ]; then
-            sudo cp /tmp/mockmate.conf /etc/nginx/conf.d/mockmate.conf
-          fi
-          sudo nginx -t
-
-          echo "==> Pulling $IMAGE"
-          docker pull "$IMAGE"
-          docker logout ghcr.io
-
-          PREV=$(docker inspect --format '{{.Config.Image}}' mockmate 2>/dev/null || true)
-          run() { docker run -d --name mockmate --env-file .env -p 8000:8000 --restart unless-stopped "$1"; }
-          healthy() {
-            for i in $(seq 1 15); do
-              curl -sf localhost:8000/health | grep -q '"ok"' && return 0
-              sleep 5
-            done
-            return 1
-          }
-
-          docker rm -f mockmate 2>/dev/null || true
-          run "$IMAGE"
-          if ! healthy; then
-            echo "ERROR: new image unhealthy"
-            docker logs mockmate --tail 50
-            docker rm -f mockmate
-            if [ -n "$PREV" ]; then
-              run "$PREV"
-              healthy && echo "Rolled back to $PREV"
-            fi
-            exit 1
-          fi
-
-          docker image prune -af   # old images stay in GHCR, re-pull by SHA to roll back by hand
-          sudo systemctl reload nginx
-          echo "==> Deployed $IMAGE"
-          ENDSSH
-
-      - name: Smoke test
-        run: |
-          curl -sf http://${{ secrets.EC2_HOST }}/health | grep -q '"ok"'
-          [ "$(curl -so /dev/null -w '%{http_code}' http://${{ secrets.EC2_HOST }}/)" = "200" ]
-          curl -sf http://${{ secrets.EC2_HOST }}/rubric/health | grep -q '"ok"'
+          for i in $(seq 1 12); do
+            curl -sf https://${{ vars.DOMAIN }}/health | grep -q '"ok"' && break
+            sleep 10
+          done
+          curl -sf https://${{ vars.DOMAIN }}/health | grep -q '"ok"'
+          curl -sf https://${{ vars.DOMAIN }}/rubric/health | grep -q '"ok"'
+          [ "$(curl -so /dev/null -w '%{http_code}' https://${{ vars.DOMAIN }}/)" = "200" ]
+          [ "$(curl -so /dev/null -w '%{http_code}' http://${{ vars.DOMAIN }}/)" = "301" ]
 
       - name: Summary
         if: always()
@@ -209,5 +202,5 @@ jobs:
           echo "### Deployment" >> $GITHUB_STEP_SUMMARY
           echo "| | |" >> $GITHUB_STEP_SUMMARY
           echo "|---|---|" >> $GITHUB_STEP_SUMMARY
-          echo "| App | http://${{ secrets.EC2_HOST }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Image | \`$IMAGE\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| App | https://${{ vars.DOMAIN }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Images | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
