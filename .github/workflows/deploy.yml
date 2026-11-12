@@ -223,17 +223,22 @@ jobs:
           rsync -az --delete -e "ssh -i ~/.ssh/ec2.pem -o StrictHostKeyChecking=no" frontend/dist/ \
             ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/${{ secrets.EC2_USER }}/MockMate/frontend/dist/
 
+      # Test the public URL: once certbot owns nginx, the bare IP only gets a 404 (vhosts match the domain)
       - name: Smoke test
+        env:
+          SITE: ${{ secrets.VITE_API_URL || format('http://{0}', secrets.EC2_HOST) }}
         run: |
-          curl -sf http://${{ secrets.EC2_HOST }}/health | grep -q '"ok"'
-          [ "$(curl -so /dev/null -w '%{http_code}' http://${{ secrets.EC2_HOST }}/)" = "200" ]
-          curl -sf http://${{ secrets.EC2_HOST }}/rubric/health | grep -q '"ok"'
+          curl -sf "$SITE/health" | grep -q '"ok"'
+          [ "$(curl -so /dev/null -w '%{http_code}' "$SITE/")" = "200" ]
+          curl -sf "$SITE/rubric/health" | grep -q '"ok"'
 
       - name: Summary
         if: always()
+        env:
+          SITE: ${{ secrets.VITE_API_URL || format('http://{0}', secrets.EC2_HOST) }}
         run: |
           echo "### Deployment" >> $GITHUB_STEP_SUMMARY
           echo "| | |" >> $GITHUB_STEP_SUMMARY
           echo "|---|---|" >> $GITHUB_STEP_SUMMARY
-          echo "| App | http://${{ secrets.EC2_HOST }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| App | $SITE |" >> $GITHUB_STEP_SUMMARY
           echo "| Image | \`$IMAGE\` |" >> $GITHUB_STEP_SUMMARY
