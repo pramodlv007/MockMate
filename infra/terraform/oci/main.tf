@@ -110,6 +110,7 @@ resource "oci_core_subnet" "public" {
 resource "oci_core_instance" "k3s" {
   compartment_id      = var.compartment_ocid
   availability_domain = data.oci_identity_availability_domains.ads.availability_domains[var.ad_index].name
+  fault_domain        = var.fault_domain # null = Oracle picks
   display_name        = "mockmate-k3s"
   shape               = "VM.Standard.A1.Flex"
 

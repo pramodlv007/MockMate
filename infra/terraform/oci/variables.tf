@@ -49,3 +49,9 @@ variable "k3s_version" {
   type        = string
   default     = "v1.31.4+k3s1"
 }
+
+variable "fault_domain" {
+  description = "Pin a fault domain (FAULT-DOMAIN-1..3) when Oracle reports out of host capacity; null lets Oracle pick"
+  type        = string
+  default     = null
+}
