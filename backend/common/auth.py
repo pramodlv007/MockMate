@@ -10,7 +10,17 @@ from pathlib import Path
 # Priority: runtime env vars (Docker --env-file, Railway, etc.) > .env file baked into image
 # This prevents stale .env files in Docker images from overriding deployment secrets.
 _config = dotenv_values(Path(__file__).parent.parent / ".env")
-SECRET_KEY = os.getenv("SECRET_KEY") or _config.get("SECRET_KEY") or "changeme-secret"
+def _signing_key(name: str) -> str:
+    # Never fall back to a value written in the source: the repo is public, so anyone could forge tokens.
+    key = os.getenv(name) or _config.get(name)
+    if not key:
+        print(f"[auth] WARNING: {name} is not set; using a random per-process key (sessions end on restart)")
+        key = secrets.token_urlsafe(48)
+    return key
+
+
+SECRET_KEY         = _signing_key("SECRET_KEY")          # access tokens
+REFRESH_SECRET_KEY = _signing_key("REFRESH_SECRET_KEY")  # refresh tokens (HttpOnly cookie)
 ALGORITHM  = os.getenv("ALGORITHM")  or _config.get("ALGORITHM")  or "HS256"
 
 # Shared secret for service-to-service calls (evaluation <-> interview).

@@ -41,9 +41,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 
 # ─── JWT config ───────────────────────────────────────────────────────────────
-SECRET_KEY            = os.getenv("SECRET_KEY", "changeme-secret")
-REFRESH_SECRET_KEY    = os.getenv("REFRESH_SECRET_KEY", "changeme-refresh-secret")
-ALGORITHM             = os.getenv("ALGORITHM", "HS256")
+from common.auth import SECRET_KEY, REFRESH_SECRET_KEY, ALGORITHM  # one definition, no hard-coded fallbacks
 ACCESS_EXPIRE_MINS    = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 REFRESH_EXPIRE_DAYS   = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
 IS_PROD               = os.getenv("ENVIRONMENT", "development") == "production"
