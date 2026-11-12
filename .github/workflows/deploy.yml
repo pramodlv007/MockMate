@@ -157,8 +157,9 @@ jobs:
           set -e
           cd ~/MockMate
 
-          # certbot rewrites the nginx config once SSL is on; only install ours before that
-          if [ ! -f /etc/letsencrypt/live/*/fullchain.pem ]; then
+          # certbot rewrites the nginx config once SSL is on; only install ours before that.
+          # live/ is root-only, so the check needs sudo (a plain [ -f ] always said "no cert" and wiped HTTPS)
+          if ! sudo sh -c "ls /etc/letsencrypt/live/*/fullchain.pem" >/dev/null 2>&1; then
             sudo cp /tmp/mockmate.conf /etc/nginx/conf.d/mockmate.conf
           fi
           sudo nginx -t
