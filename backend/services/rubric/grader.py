@@ -78,7 +78,9 @@ def call_judge(prompt: str):
         model=os.getenv("JUDGE_MODEL", "gemini-2.5-flash"),
         messages=[{"role": "user", "content": prompt}],
         temperature=0,
-        max_tokens=1500,
+        # thinking models (gemini-2.5-flash) spend hidden reasoning tokens from this budget; at 1500 a hard
+        # answer ran out mid-JSON (finish_reason=length) and failed both attempts. The grade itself is ~400.
+        max_tokens=8192,
         response_format={"type": "json_object"},
     )
     u = r.usage

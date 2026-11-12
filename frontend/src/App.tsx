@@ -12,6 +12,7 @@ import { Login } from './pages/Login';
 import { Signup } from './pages/Signup';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import type { ReactNode } from 'react';
+import { TriangleAlert } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 
@@ -31,12 +32,12 @@ class ErrorBoundary extends Component<
     if (this.state.hasError) {
       return (
         <div style={{
-          minHeight: '100vh', background: '#060611', display: 'flex',
+          minHeight: '100vh', background: '#0f172a', display: 'flex',
           alignItems: 'center', justifyContent: 'center', flexDirection: 'column',
           gap: '16px', fontFamily: 'Inter, system-ui, sans-serif', color: '#94a3b8'
         }}>
-          <div style={{ fontSize: '3rem' }}>⚠️</div>
-          <h2 style={{ color: '#f1f5f9', fontSize: '1.25rem', fontWeight: 600 }}>
+          <TriangleAlert size={40} color="#f59e0b" aria-hidden="true" />
+          <h2 style={{ color: '#f8fafc', fontSize: '1.25rem', fontWeight: 600 }}>
             Something went wrong
           </h2>
           <p style={{ fontSize: '0.85rem', maxWidth: 400, textAlign: 'center' }}>
@@ -45,12 +46,12 @@ class ErrorBoundary extends Component<
           <button
             onClick={() => { this.setState({ hasError: false, errorMsg: '' }); window.location.href = '/'; }}
             style={{
-              marginTop: 8, padding: '10px 24px', borderRadius: 8,
-              background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-              color: 'white', border: 'none', cursor: 'pointer', fontWeight: 600
+              marginTop: 8, padding: '12px 24px', borderRadius: 10,
+              background: '#22c55e',
+              color: '#0f172a', border: 'none', cursor: 'pointer', fontWeight: 600
             }}
           >
-            ↩ Go Back Home
+            Go back home
           </button>
         </div>
       );
@@ -80,9 +81,12 @@ function AppRoutes() {
   const isHome = location.pathname === '/';
 
   return (
-    <div className="min-h-screen text-slate-50" style={{ background: '#060611', fontFamily: "'Inter', system-ui, sans-serif" }}>
+    <div className="min-h-screen bg-bg text-ink">
+      <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[60] focus:rounded-btn focus:bg-ink focus:px-4 focus:py-3 focus:font-semibold focus:text-bg">
+        Skip to content
+      </a>
       {isAuthenticated && <Header />}
-      <main className={isAuthenticated && !isHome ? "container mx-auto px-4 py-8" : ""}>
+      <main id="main" className={isAuthenticated && !isHome ? "mx-auto max-w-6xl px-4 py-10 sm:px-6" : ""}>
         <Routes>
           <Route path="/login" element={isAuthenticated ? <Navigate to="/" /> : <Login />} />
           <Route path="/signup" element={isAuthenticated ? <Navigate to="/" /> : <Signup />} />

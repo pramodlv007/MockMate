@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { Gauge, toneOf } from '../components/Gauge';
 import { endpoints } from '../api';
 import type { InterviewSession, EvaluationFeedback, PerQuestionResult, Mistake } from '../api';
 import {
@@ -10,52 +12,41 @@ import {
     XCircle, ShieldCheck, ShieldAlert, User
 } from 'lucide-react';
 
-// ── Circular Score Ring ────────────────────────────────────────────────────────
-const ScoreRing = ({ score, size = 80, label, color }: { score: number; size?: number; label: string; color: string }) => {
-    const radius = (size - 8) / 2;
-    const circumference = 2 * Math.PI * radius;
-    const offset = circumference - (score / 100) * circumference;
-    return (
-        <div className="flex flex-col items-center gap-2">
-            <div className="relative" style={{ width: size, height: size }}>
-                <svg width={size} height={size} className="-rotate-90">
-                    <circle cx={size / 2} cy={size / 2} r={radius} stroke="rgba(255,255,255,0.06)" strokeWidth="5" fill="none" />
-                    <circle cx={size / 2} cy={size / 2} r={radius} stroke={color} strokeWidth="5" fill="none"
-                        strokeDasharray={circumference} strokeDashoffset={offset}
-                        strokeLinecap="round" style={{ transition: 'stroke-dashoffset 1.2s ease' }} />
-                </svg>
-                <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="text-xl font-bold text-white">{score}</span>
-                </div>
-            </div>
-            <span className="text-xs text-slate-400 uppercase tracking-wide text-center">{label}</span>
-        </div>
-    );
-};
+// ── Circular Score Ring: fills once, coloured by the score, the number always printed ──
+const ScoreRing = ({ score, size = 80, label }: { score: number; size?: number; label: string; color?: string }) => (
+    <div className="flex flex-col items-center gap-2">
+        <Gauge value={score} max={100} size={size} stroke={7}>
+            <span className="text-xl font-bold tabular-nums">{score}</span>
+        </Gauge>
+        <span className="eyebrow text-center">{label}</span>
+    </div>
+);
 
-// ── Dimension Bar ─────────────────────────────────────────────────────────────
-const DimBar = ({ label, value, color }: { label: string; value: number; color: string }) => (
+// ── Dimension Bar: grows once from the left (transform only), toned by the value ──
+const DimBar = ({ label, value }: { label: string; value: number; color?: string }) => (
     <div className="flex items-center gap-3">
-        <span className="text-xs text-slate-400 w-36 text-right shrink-0">{label}</span>
-        <div className="flex-1 h-1.5 rounded-full" style={{ background: 'rgba(255,255,255,0.06)' }}>
-            <div className="h-full rounded-full transition-all duration-1000" style={{ width: `${value}%`, background: color }} />
+        <span className="text-xs text-muted w-36 text-right shrink-0">{label}</span>
+        <div className="flex-1 h-1.5 overflow-hidden rounded-full bg-white/10">
+            <motion.div className="h-full origin-left rounded-full" style={{ background: toneOf(value / 100) }}
+                initial={{ scaleX: 0 }} animate={{ scaleX: Math.min(Math.max(value, 0), 100) / 100 }}
+                transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }} />
         </div>
-        <span className="text-xs text-white w-8 text-right">{value}</span>
+        <span className="text-xs text-ink w-8 text-right tabular-nums">{value}</span>
     </div>
 );
 
 // ── Score Color Helper ────────────────────────────────────────────────────────
-const scoreColor = (n: number) => n >= 70 ? '#10b981' : n >= 40 ? '#f59e0b' : '#ef4444';
-const scoreBg    = (n: number) => n >= 70 ? 'rgba(16,185,129,0.12)' : n >= 40 ? 'rgba(245,158,11,0.12)' : 'rgba(239,68,68,0.12)';
+const scoreColor = (n: number) => n >= 70 ? '#22c55e' : n >= 40 ? '#f59e0b' : '#ef4444';
+const scoreBg    = (n: number) => n >= 70 ? 'rgba(34,197,94,0.12)' : n >= 40 ? 'rgba(245,158,11,0.12)' : 'rgba(239,68,68,0.12)';
 
 const hireColor = (rec: string) =>
-    rec.includes('Strong Yes') ? '#10b981' : rec === 'Yes' ? '#34d399' :
+    rec.includes('Strong Yes') ? '#22c55e' : rec === 'Yes' ? '#4ade80' :
     rec === 'Maybe' ? '#f59e0b' : rec === 'No' ? '#ef4444' : '#dc2626';
 
 // ── Category Dot ──────────────────────────────────────────────────────────────
 const CategoryDot = ({ cat }: { cat: string }) => {
     const map: Record<string, { color: string; label: string }> = {
-        STRONG:   { color: '#10b981', label: 'Strong' },
+        STRONG:   { color: '#22c55e', label: 'Strong' },
         ADEQUATE: { color: '#f59e0b', label: 'Adequate' },
         WEAK:     { color: '#ef4444', label: 'Weak' },
     };
@@ -74,15 +65,15 @@ const IdealAnswer = ({ outline }: { outline: string }) => {
     const [open, setOpen] = useState(false);
     if (!outline || outline === 'N/A') return null;
     return (
-        <div className="mt-3 rounded-lg overflow-hidden" style={{ border: '1px solid rgba(139,92,246,0.2)' }}>
+        <div className="mt-3 rounded-lg overflow-hidden" style={{ border: '1px solid rgba(56,189,248,0.2)' }}>
             <button onClick={() => setOpen(o => !o)}
                 className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold transition-colors"
-                style={{ background: 'rgba(139,92,246,0.08)', color: '#a78bfa' }}>
+                style={{ background: 'rgba(56,189,248,0.08)', color: '#7dd3fc' }}>
                 <span className="flex items-center gap-1.5"><Lightbulb size={12} /> Ideal Answer Outline</span>
                 {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
             </button>
             {open && (
-                <div className="px-3 py-3" style={{ background: 'rgba(139,92,246,0.04)' }}>
+                <div className="px-3 py-3" style={{ background: 'rgba(56,189,248,0.04)' }}>
                     <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-line">{outline}</p>
                 </div>
             )}
@@ -97,7 +88,7 @@ const QuestionCard = ({ pq, idx }: { pq: PerQuestionResult; idx: number }) => {
     const sb = scoreBg(pq.overall);
 
     return (
-        <div className="card" style={{ borderLeft: `3px solid ${sc}` }}>
+        <div className="surface" style={{ borderLeft: `3px solid ${sc}` }}>
             {/* Header (always visible) */}
             <button className="w-full text-left" onClick={() => setExpanded(e => !e)}>
                 <div className="flex items-start gap-3">
@@ -128,9 +119,9 @@ const QuestionCard = ({ pq, idx }: { pq: PerQuestionResult; idx: number }) => {
                     {/* Dimension bars */}
                     <div className="space-y-2.5">
                         {([
-                            { key: 'technical_accuracy', label: 'Technical Accuracy', color: '#10b981' },
+                            { key: 'technical_accuracy', label: 'Technical Accuracy', color: '#22c55e' },
                             { key: 'depth',              label: 'Depth',              color: '#06b6d4' },
-                            { key: 'relevance',          label: 'Relevance',          color: '#8b5cf6' },
+                            { key: 'relevance',          label: 'Relevance',          color: '#38bdf8' },
                             { key: 'structure',          label: 'Structure',          color: '#f59e0b' },
                             { key: 'resume_alignment',   label: 'Resume Alignment',   color: '#ec4899' },
                         ] as { key: keyof PerQuestionResult['scores']; label: string; color: string }[]).map(({ key, label, color }) => (
@@ -141,7 +132,7 @@ const QuestionCard = ({ pq, idx }: { pq: PerQuestionResult; idx: number }) => {
                     {/* What was good */}
                     {pq.what_was_good && pq.what_was_good !== 'N/A — no substantive answer provided' && (
                         <div className="rounded-lg p-3 text-sm text-slate-300"
-                            style={{ background: 'rgba(16,185,129,0.05)', borderLeft: '2px solid rgba(16,185,129,0.3)' }}>
+                            style={{ background: 'rgba(34,197,94,0.05)', borderLeft: '2px solid rgba(34,197,94,0.3)' }}>
                             <div className="text-xs text-emerald-400 mb-1 flex items-center gap-1"><CheckCircle size={11} /> What Worked</div>
                             {pq.what_was_good}
                         </div>
@@ -209,7 +200,7 @@ export const Results = () => {
         <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 text-center animate-fade-in">
             <h2 className="text-2xl font-bold text-white">We couldn&apos;t evaluate this interview</h2>
             <p className="text-slate-400 max-w-md">Something went wrong while analysing your recording. Your video was saved; please try another interview or contact support.</p>
-            <button onClick={() => navigate('/history')} className="btn-secondary">Back to History</button>
+            <button onClick={() => navigate('/history')} className="btn btn--secondary">Back to History</button>
         </div>
     );
 
@@ -217,7 +208,7 @@ export const Results = () => {
         return (
             <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 animate-fade-in">
                 <div className="w-20 h-20 rounded-full animate-spin"
-                    style={{ border: '3px solid rgba(16,185,129,0.2)', borderTopColor: '#10b981' }} />
+                    style={{ border: '3px solid rgba(34,197,94,0.2)', borderTopColor: '#22c55e' }} />
                 <div className="text-center space-y-3">
                     <h2 className="text-2xl font-bold text-white">Analyzing Your Performance</h2>
                     <p className="text-slate-400">AI is evaluating your video, speech, and body language...</p>
@@ -254,7 +245,7 @@ export const Results = () => {
         <div className="max-w-6xl mx-auto space-y-6 animate-slide-up pb-12">
 
             {/* ── Hero Header ──────────────────────────────────────────────── */}
-            <div className="card glow-emerald" style={{ background: 'linear-gradient(135deg, rgba(16,185,129,0.05) 0%, rgba(6,182,212,0.05) 100%)' }}>
+            <div className="surface" style={{ background: 'linear-gradient(135deg, rgba(34,197,94,0.05) 0%, rgba(6,182,212,0.05) 100%)' }}>
                 <div className="flex items-start justify-between gap-6 flex-wrap">
                     <div className="space-y-3">
                         <h1 className="text-3xl font-bold text-white">Interview Analysis</h1>
@@ -269,23 +260,30 @@ export const Results = () => {
                             <p className="text-slate-300 text-sm max-w-xl leading-relaxed">{feedback.executive_summary}</p>
                         )}
                     </div>
-                    <div className="text-center shrink-0">
-                        <div className="text-6xl font-extrabold text-gradient">{overallScore}</div>
-                        <div className="text-xs text-slate-500 uppercase tracking-widest mt-1">Overall Score</div>
+                    <div className="shrink-0">
+                        <Gauge value={overallScore} max={100} size={136} stroke={11}>
+                            <span>
+                                <span className="block text-4xl font-extrabold tabular-nums">{overallScore}</span>
+                                <span className="text-xs text-muted">overall, of 100</span>
+                            </span>
+                        </Gauge>
                     </div>
                 </div>
             </div>
 
             {/* ── Tab Navigation ───────────────────────────────────────────── */}
-            <div className="flex gap-1 p-1 rounded-xl overflow-x-auto" style={{ background: 'rgba(255,255,255,0.03)' }}>
+            {/* one ink pill slides to the chosen tab by transform alone (taste-skill tabs, 240ms) */}
+            <div role="tablist" aria-label="Result sections" className="flex gap-1 overflow-x-auto rounded-btn border border-white/10 bg-black/25 p-1">
                 {tabs.map(({ key, label, icon: Icon }) => (
-                    <button key={key} onClick={() => setActiveTab(key)}
-                        className={`flex-1 min-w-max flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg transition-all duration-200 text-sm font-medium ${
-                            activeTab === key
-                                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
-                                : 'text-slate-500 hover:text-slate-300'
-                        }`}>
-                        <Icon size={15} /> {label}
+                    <button key={key} role="tab" aria-selected={activeTab === key} onClick={() => setActiveTab(key)}
+                        className="relative flex min-h-[44px] min-w-max flex-1 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold">
+                        {activeTab === key && (
+                            <motion.span layoutId="results-tab" className="absolute inset-0 rounded-lg bg-ink"
+                                transition={{ duration: 0.24, ease: [0.65, 0, 0.35, 1] }} />
+                        )}
+                        <span className={`relative flex items-center gap-2 transition-colors duration-150 ${activeTab === key ? 'text-bg' : 'text-soft hover:text-ink'}`}>
+                            <Icon size={15} aria-hidden="true" /> {label}
+                        </span>
                     </button>
                 ))}
             </div>
@@ -300,35 +298,35 @@ export const Results = () => {
                     {breakdown && (
                         <div className="grid md:grid-cols-3 gap-4">
                             {/* Content */}
-                            <div className="card flex flex-col items-center gap-4 py-6">
-                                <ScoreRing score={breakdown.content.score} label="Content" color="#10b981" size={88} />
+                            <div className="surface flex flex-col items-center gap-4 py-6">
+                                <ScoreRing score={breakdown.content.score} label="Content" color="#22c55e" size={88} />
                                 <div className="text-center space-y-1">
                                     <div className="text-xs text-slate-500 font-medium uppercase tracking-wider">{breakdown.content.weight} weight</div>
                                     <p className="text-xs text-slate-400">{breakdown.content.explanation}</p>
                                 </div>
                             </div>
                             {/* Communication */}
-                            <div className="card flex flex-col items-center gap-4 py-6">
+                            <div className="surface flex flex-col items-center gap-4 py-6">
                                 <ScoreRing score={breakdown.communication.score} label="Communication" color="#06b6d4" size={88} />
                                 <div className="w-full space-y-1 text-center">
                                     <div className="text-xs text-slate-500 font-medium uppercase tracking-wider mb-2">{breakdown.communication.weight} weight</div>
                                     {breakdown.communication.penalties.map((p, i) => (
                                         <div key={i} className="text-xs px-2 py-0.5 rounded"
-                                            style={{ background: p.startsWith('No penalties') ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)', color: p.startsWith('No penalties') ? '#10b981' : '#f87171' }}>
+                                            style={{ background: p.startsWith('No penalties') ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)', color: p.startsWith('No penalties') ? '#22c55e' : '#f87171' }}>
                                             {p}
                                         </div>
                                     ))}
                                 </div>
                             </div>
                             {/* Presence */}
-                            <div className="card flex flex-col items-center gap-4 py-6">
-                                <ScoreRing score={breakdown.presence.score} label="Presence" color="#8b5cf6" size={88} />
+                            <div className="surface flex flex-col items-center gap-4 py-6">
+                                <ScoreRing score={breakdown.presence.score} label="Presence" color="#38bdf8" size={88} />
                                 <div className="w-full space-y-2">
                                     <div className="text-xs text-slate-500 font-medium uppercase tracking-wider text-center mb-2">{breakdown.presence.weight} weight</div>
                                     {([
-                                        { label: 'Eye Contact', key: 'eye_contact', color: '#10b981' },
+                                        { label: 'Eye Contact', key: 'eye_contact', color: '#22c55e' },
                                         { label: 'Posture',     key: 'posture',     color: '#06b6d4' },
-                                        { label: 'Engagement',  key: 'engagement',  color: '#8b5cf6' },
+                                        { label: 'Engagement',  key: 'engagement',  color: '#38bdf8' },
                                     ] as { label: string; key: keyof typeof breakdown.presence.components; color: string }[]).map(({ label, key, color }) => (
                                         <div key={key} className="flex items-center gap-2">
                                             <span className="text-xs text-slate-400 w-20 text-right">{label}</span>
@@ -345,12 +343,12 @@ export const Results = () => {
 
                     {/* Resume Alignment */}
                     {resumeAlign && (
-                        <div className="card">
+                        <div className="surface">
                             <h3 className="text-lg font-semibold mb-4 flex items-center gap-2 text-white">
                                 <User className="text-emerald-400" size={18} /> Resume Alignment
                             </h3>
                             <div className="grid md:grid-cols-3 gap-4">
-                                <div className="rounded-lg p-4" style={{ background: 'rgba(16,185,129,0.05)', border: '1px solid rgba(16,185,129,0.15)' }}>
+                                <div className="rounded-lg p-4" style={{ background: 'rgba(34,197,94,0.05)', border: '1px solid rgba(34,197,94,0.15)' }}>
                                     <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-semibold mb-3">
                                         <ShieldCheck size={13} /> Verified Claims
                                     </div>
@@ -395,13 +393,13 @@ export const Results = () => {
 
                     {/* Role Fit */}
                     {roleComp && (
-                        <div className="card">
+                        <div className="surface">
                             <h3 className="text-lg font-semibold mb-4 flex items-center gap-2 text-white">
                                 <Target className="text-cyan-400" size={18} /> Role Fit
                             </h3>
                             <div className="grid md:grid-cols-3 gap-4">
                                 {([
-                                    { label: 'Meets Requirements',   items: roleComp.meets_requirements,   color: '#10b981', Icon: CheckCircle },
+                                    { label: 'Meets Requirements',   items: roleComp.meets_requirements,   color: '#22c55e', Icon: CheckCircle },
                                     { label: 'Below Requirements',   items: roleComp.below_requirements,   color: '#f59e0b', Icon: TrendingDown },
                                     { label: 'Exceeds Requirements', items: roleComp.exceeds_requirements, color: '#06b6d4', Icon: TrendingUp },
                                 ] as { label: string; items: string[]; color: string; Icon: React.ComponentType<{ size: number }> }[]).map(({ label, items, color, Icon }) => (
@@ -428,7 +426,7 @@ export const Results = () => {
 
                     {/* Strengths & Improvements */}
                     <div className="grid md:grid-cols-2 gap-6">
-                        <div className="card" style={{ borderLeft: '3px solid #10b981' }}>
+                        <div className="surface" style={{ borderLeft: '3px solid #22c55e' }}>
                             <div className="flex items-center gap-2 mb-4">
                                 <CheckCircle className="text-emerald-400" size={20} />
                                 <h3 className="text-lg font-semibold text-white">Strengths</h3>
@@ -444,7 +442,7 @@ export const Results = () => {
                                 }
                             </ul>
                         </div>
-                        <div className="card" style={{ borderLeft: '3px solid #f59e0b' }}>
+                        <div className="surface" style={{ borderLeft: '3px solid #f59e0b' }}>
                             <div className="flex items-center gap-2 mb-4">
                                 <Lightbulb className="text-amber-400" size={20} />
                                 <h3 className="text-lg font-semibold text-white">Key Improvements</h3>
@@ -475,10 +473,10 @@ export const Results = () => {
                     {pqResults.length > 0
                         ? pqResults.map((pq, i) => <QuestionCard key={i} pq={pq} idx={i} />)
                         : session.questions.map((q, i) => (
-                            <div key={q.id} className="card">
+                            <div key={q.id} className="surface">
                                 <div className="flex items-start gap-4">
                                     <div className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold shrink-0"
-                                        style={{ background: 'rgba(16,185,129,0.15)', color: '#10b981' }}>{i + 1}</div>
+                                        style={{ background: 'rgba(34,197,94,0.15)', color: '#22c55e' }}>{i + 1}</div>
                                     <div className="flex-1">
                                         <p className="text-white font-medium text-sm mb-2">{q.content}</p>
                                         {q.transcript && (
@@ -510,13 +508,13 @@ export const Results = () => {
                         <AlertTriangle className="text-red-400" size={22} /> Mistakes & Better Approaches
                     </h3>
                     {mistakes.length === 0 ? (
-                        <div className="card text-center text-slate-400 py-10">
+                        <div className="surface text-center text-slate-400 py-10">
                             <CheckCircle size={40} className="text-emerald-400 mx-auto mb-3" />
                             No specific mistakes identified — great performance!
                         </div>
                     ) : (
                         mistakes.map((m, i) => (
-                            <div key={i} className="card" style={{ borderLeft: '3px solid #ef4444' }}>
+                            <div key={i} className="surface" style={{ borderLeft: '3px solid #ef4444' }}>
                                 <div className="flex items-start gap-4">
                                     <div className="w-8 h-8 rounded-lg flex items-center justify-center font-bold shrink-0 text-sm"
                                         style={{ background: 'rgba(239,68,68,0.1)', color: '#f87171' }}>{i + 1}</div>
@@ -546,7 +544,7 @@ export const Results = () => {
                                         </div>
                                         {m.better_approach && (
                                             <div className="rounded-lg p-3"
-                                                style={{ background: 'rgba(16,185,129,0.05)', borderLeft: '2px solid rgba(16,185,129,0.3)' }}>
+                                                style={{ background: 'rgba(34,197,94,0.05)', borderLeft: '2px solid rgba(34,197,94,0.3)' }}>
                                                 <div className="text-xs text-emerald-400 mb-1 flex items-center gap-1">
                                                     <ArrowRight size={11} /> Better Approach
                                                 </div>
@@ -571,10 +569,10 @@ export const Results = () => {
                     </h3>
                     <div className="grid gap-4">
                         {Object.entries(trainingPlan).map(([day, plan], i) => (
-                            <div key={day} className="card">
+                            <div key={day} className="surface">
                                 <div className="flex items-start gap-4">
                                     <div className="w-12 h-12 rounded-xl flex items-center justify-center text-white font-bold shrink-0"
-                                        style={{ background: 'linear-gradient(135deg, #10b981, #06b6d4)' }}>
+                                        style={{ background: 'linear-gradient(135deg, #22c55e, #06b6d4)' }}>
                                         D{i + 1}
                                     </div>
                                     <div className="flex-1">
@@ -596,7 +594,7 @@ export const Results = () => {
                             </div>
                         ))}
                         {Object.keys(trainingPlan).length === 0 && (
-                            <div className="card text-center text-slate-400 py-8">
+                            <div className="surface text-center text-slate-400 py-8">
                                 Training plan will appear after evaluation completes.
                             </div>
                         )}
@@ -616,7 +614,7 @@ export const Results = () => {
                     {speechMetrics && (
                         <div className="grid md:grid-cols-2 gap-6">
                             {/* Speech card */}
-                            <div className="card">
+                            <div className="surface">
                                 <h4 className="text-lg font-semibold mb-4 flex items-center gap-2 text-white">
                                     <MessageSquare className="text-emerald-400" size={18} /> Speech Analysis
                                 </h4>
@@ -670,15 +668,15 @@ export const Results = () => {
 
                             {/* Non-verbal card */}
                             {nonVerbal && (
-                                <div className="card">
+                                <div className="surface">
                                     <h4 className="text-lg font-semibold mb-4 flex items-center gap-2 text-white">
                                         <Eye className="text-cyan-400" size={18} /> Non-Verbal Analysis
                                     </h4>
                                     <div className="space-y-4 mb-4">
                                         {([
-                                            { label: 'Eye Contact',  value: nonVerbal.eye_contact_percent,  color: '#10b981' },
+                                            { label: 'Eye Contact',  value: nonVerbal.eye_contact_percent,  color: '#22c55e' },
                                             { label: 'Good Posture', value: nonVerbal.good_posture_percent, color: '#06b6d4' },
-                                            { label: 'Engagement',   value: nonVerbal.engagement_percent,   color: '#8b5cf6' },
+                                            { label: 'Engagement',   value: nonVerbal.engagement_percent,   color: '#38bdf8' },
                                         ] as { label: string; value: number; color: string }[]).map(({ label, value, color }) => (
                                             <div key={label} className="flex justify-between items-center">
                                                 <span className="text-sm text-slate-300">{label}</span>
@@ -714,7 +712,7 @@ export const Results = () => {
                     )}
 
                     {!speechMetrics && !nonVerbal && (
-                        <div className="card text-center text-slate-400 py-8">
+                        <div className="surface text-center text-slate-400 py-8">
                             Speech and body language data will appear after evaluation completes.
                         </div>
                     )}
@@ -723,10 +721,10 @@ export const Results = () => {
 
             {/* ── Actions ──────────────────────────────────────────────────── */}
             <div className="flex justify-center gap-4 pt-4">
-                <button onClick={() => navigate('/history')} className="btn-secondary px-6">
+                <button onClick={() => navigate('/history')} className="btn btn--secondary px-6">
                     <ChevronLeft size={18} /> Back to History
                 </button>
-                <button onClick={() => navigate('/new-interview')} className="btn-primary px-8">
+                <button onClick={() => navigate('/new-interview')} className="btn btn--primary px-8">
                     <RefreshCw size={18} /> Practice Again
                 </button>
             </div>

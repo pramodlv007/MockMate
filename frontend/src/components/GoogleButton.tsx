@@ -44,8 +44,8 @@ export const GoogleButton = ({ onError }: { onError: (msg: string) => void }) =>
     if (!CLIENT_ID) return null;
     return (
         <>
-            <div className="flex items-center gap-3 text-slate-500 text-sm my-2">
-                <span className="flex-1 border-t-2 border-dashed border-slate-600" />or<span className="flex-1 border-t-2 border-dashed border-slate-600" />
+            <div className="my-2 flex items-center gap-3 text-sm text-muted">
+                <span className="flex-1 border-t border-white/10" />or<span className="flex-1 border-t border-white/10" />
             </div>
             <div ref={ref} className="flex justify-center" />
         </>

@@ -36,11 +36,11 @@ export const History = () => {
                     interviews.map(interview => (
                         <div
                             key={interview.id}
-                            className="card group transition-all"
+                            className="surface"
                         >
                             <div className="flex items-center justify-between">
                                 <div className="space-y-1 flex-1">
-                                    <h3 className="font-semibold text-lg group-hover:text-emerald-400 transition-colors">
+                                    <h3 className="font-semibold text-lg">
                                         {interview.company_name}
                                     </h3>
                                     <p className="text-sm text-slate-400 flex items-center gap-2">
@@ -52,7 +52,7 @@ export const History = () => {
                                 <div className="flex items-center gap-3 flex-wrap">
                                     {interview.overall_score ? (
                                         <>
-                                            <div className="flex items-center text-sm font-medium text-emerald-400 bg-emerald-400/10 px-3 py-1 rounded-full whitespace-nowrap">
+                                            <div className="flex items-center text-sm font-medium text-action bg-action/10 px-3 py-1 rounded-full whitespace-nowrap">
                                                 <Trophy className="w-4 h-4 mr-1.5" />
                                                 {interview.overall_score}/100
                                             </div>
@@ -64,13 +64,13 @@ export const History = () => {
                                                     if (!bd) return null;
                                                     return (
                                                         <div className="flex items-center gap-2 text-xs">
-                                                            <span className="px-1.5 py-0.5 rounded" style={{ background: 'rgba(16,185,129,0.1)', color: '#10b981' }}>
+                                                            <span className="px-1.5 py-0.5 rounded" style={{ background: 'rgba(34,197,94,0.1)', color: '#22c55e' }}>
                                                                 C:{bd.content?.score}
                                                             </span>
                                                             <span className="px-1.5 py-0.5 rounded" style={{ background: 'rgba(6,182,212,0.1)', color: '#06b6d4' }}>
                                                                 M:{bd.communication?.score}
                                                             </span>
-                                                            <span className="px-1.5 py-0.5 rounded" style={{ background: 'rgba(139,92,246,0.1)', color: '#8b5cf6' }}>
+                                                            <span className="px-1.5 py-0.5 rounded" style={{ background: 'rgba(56,189,248,0.1)', color: '#38bdf8' }}>
                                                                 P:{bd.presence?.score}
                                                             </span>
                                                         </div>
@@ -90,13 +90,13 @@ export const History = () => {
                             <div className="flex items-center gap-3 mt-4 pt-4 border-t border-slate-700/50">
                                 <button
                                     onClick={() => navigate(`/results/${interview.id}`)}
-                                    className="btn-primary text-sm py-2"
+                                    className="btn btn--primary"
                                 >
                                     View Results <ChevronRight size={16} />
                                 </button>
                                 <button
                                     onClick={() => handleDelete(interview.id)}
-                                    className="btn-secondary text-sm py-2 ml-auto text-red-400"
+                                    className="btn btn--secondary ml-auto text-danger"
                                     aria-label={`Delete interview with ${interview.company_name}`}
                                 >
                                     <Trash2 size={16} /> Delete

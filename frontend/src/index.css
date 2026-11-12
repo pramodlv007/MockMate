@@ -1,153 +1,166 @@
-@import url('https://fonts.googleapis.com/css2?family=Kalam:wght@300;400;700&family=Patrick+Hand&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Sketchy theme: chalk-on-charcoal, wobbly hand-drawn borders, hard offset shadows.
-   Tokens live here so every page inherits via .card / .btn-* / .input-field. */
+/* MockMate design system
+   Tokens: ui-ux-pro-max "Dark Mode (OLED)" for an AI interview-practice SaaS: code green for the
+   action and a covered rubric point, difficulty amber for the accent and a missing one, on slate.
+   Motion: the taste-skill layer (public/assets/motion) reads --bg --ink --card --action --action-ink
+   --line-strong --ease --r-btn --s-2 from here. Page CSS never sets a .btn's transform or transition. */
 :root {
-  --ink: #f3ecd8;                 /* chalk */
-  --paper: #1d2230;               /* charcoal board */
-  --paper-2: #262c3d;
-  --wobble: 18px 6px 20px 8px / 8px 20px 6px 18px;
-  --sketch-shadow: 3px 3px 0 rgba(243, 236, 216, 0.85);
+  color-scheme: dark;
+  --bg: #0f172a;         --bg-rgb: 15 23 42;
+  --bg-2: #0b1222;
+  --card: #192134;       --card-rgb: 25 33 52;
+  --ink: #f8fafc;        --ink-rgb: 248 250 252;
+  --ink-2: #cbd5e1;      --ink-2-rgb: 203 213 225;
+  --muted-ink: #94a3b8;  --muted-ink-rgb: 148 163 184;
+  --line: rgb(255 255 255 / .08);
+  --line-strong: rgb(255 255 255 / .18);
+  --action: #22c55e;     --action-rgb: 34 197 94;
+  --action-ink: #0f172a;
+  /* the palette's #D97706 one step lighter, so amber text keeps 4.5:1 on the dark ground */
+  --accent: #f59e0b;     --accent-rgb: 245 158 11;
+  --danger: #f87171;     --danger-rgb: 248 113 113;
+  --ease: cubic-bezier(.2, .8, .2, 1);
+  --ease-enter: cubic-bezier(.22, 1, .36, 1);
+  --r-btn: 10px;
+  --r-card: 16px;
+  --s-2: 8px;
 }
 
 @layer base {
+  html { background: var(--bg); }
   body {
-    @apply text-slate-100 antialiased overflow-x-hidden;
-    font-family: 'Patrick Hand', 'Kalam', 'Comic Sans MS', cursive;
-    font-size: 1.1rem;
-    background-color: var(--paper);
-    background-image: radial-gradient(rgba(243, 236, 216, 0.09) 1px, transparent 1px);
-    background-size: 22px 22px;
+    @apply antialiased;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-size: 16px;
+    line-height: 1.5;
     min-height: 100vh;
+    overflow-x: hidden;
   }
-  h1, h2, h3, h4 { font-family: 'Kalam', 'Patrick Hand', cursive; font-weight: 700; }
+  h1, h2, h3, h4 { color: var(--ink); letter-spacing: -0.02em; text-wrap: balance; }
+  h1 { letter-spacing: -0.035em; }
+  p { text-wrap: pretty; }
+  /* one ring for every control: 2px in the action colour, 2px off, no transition */
+  :focus-visible { outline: 2px solid var(--action); outline-offset: 2px; }
+  select option { background: var(--card); color: var(--ink); }
+  ::selection { background: rgb(var(--action-rgb) / .28); }
 }
 
 @layer components {
-  .btn-primary {
-    @apply px-5 py-2.5 text-white transition-all duration-150 font-bold flex items-center justify-center gap-2 active:scale-95;
-    background: #2563eb;
-    border: 2px solid var(--ink);
-    border-radius: var(--wobble);
-    box-shadow: var(--sketch-shadow);
+  /* buttons: one pair. The motion layer adds the 1px step, the press and the hover tone */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: .5rem;
+    min-height: 44px; padding: .625rem 1.125rem;
+    border: 1px solid transparent; border-radius: var(--r-btn);
+    font-weight: 600; font-size: .9375rem; line-height: 1.2; white-space: nowrap;
+    cursor: pointer; user-select: none;
   }
-  .btn-primary:hover { transform: translate(-1px, -1px); box-shadow: 5px 5px 0 var(--ink); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn--primary { background: var(--action); color: var(--action-ink); }
+  .btn--secondary { background: transparent; color: var(--ink); border-color: var(--line-strong); }
+  .btn--xl { min-height: 52px; padding: .875rem 1.5rem; font-size: 1rem; }
+  /* older markup keeps working in the new look (no motion hooks: prefer .btn .btn--primary) */
+  .btn-primary { @apply btn btn--primary; }
+  .btn-secondary { @apply btn btn--secondary; }
 
-  .btn-secondary {
-    @apply px-5 py-2.5 text-slate-100 transition-all duration-150 font-bold flex items-center justify-center gap-2 active:scale-95;
-    background: transparent;
-    border: 2px dashed var(--ink);
-    border-radius: var(--wobble);
+  /* .card is the linked card the motion layer lifts 2px; .surface is a panel that stays put */
+  .card, .surface {
+    display: block; padding: 1.5rem; color: inherit;
+    background: var(--card); border: 1px solid var(--line); border-radius: var(--r-card);
   }
-  .btn-secondary:hover { background: rgba(243, 236, 216, 0.08); }
+  .glass-panel { @apply surface; }
 
   .input-field {
-    @apply w-full px-4 py-3 text-white placeholder-slate-500 focus:outline-none transition-all duration-150;
-    background: var(--paper-2);
-    border: 2px solid rgba(243, 236, 216, 0.6);
-    border-radius: var(--wobble);
+    width: 100%; min-height: 48px; padding: .75rem 1rem;
+    background: rgb(var(--bg-rgb) / .6); color: var(--ink);
+    border: 1px solid var(--line-strong); border-radius: var(--r-btn);
+    transition: border-color 120ms var(--ease), box-shadow 120ms var(--ease);
   }
-  .input-field:focus { border-color: var(--ink); box-shadow: var(--sketch-shadow); }
-
-  .card {
-    @apply p-6 transition-all duration-200;
-    background: var(--paper-2);
-    border: 2px solid var(--ink);
-    border-radius: var(--wobble);
-    box-shadow: var(--sketch-shadow);
-  }
-  .card:hover { transform: rotate(-0.3deg); }
-
-  .glass-panel {
-    background: var(--paper-2);
-    border: 2px dashed rgba(243, 236, 216, 0.6);
-    border-radius: var(--wobble);
+  .input-field::placeholder { color: rgb(var(--muted-ink-rgb) / .75); }
+  .input-field:hover { border-color: rgb(var(--ink-rgb) / .45); }
+  .input-field:focus {
+    outline: none; border-color: var(--action); transition-duration: 0s;
+    box-shadow: 0 0 0 1px var(--action), 0 0 0 4px rgb(var(--action-rgb) / .2);
   }
 
-  /* Gradient helpers keep their names (used across pages) but render as flat chalk colours. */
-  .text-gradient       { color: #fcd34d; text-decoration: underline wavy rgba(252, 211, 77, 0.6); text-underline-offset: 6px; }
-  .text-gradient-hero  { color: var(--ink); }
-  .text-gradient-gold  { color: #fcd34d; }
-  .glow-blue, .glow-gold { box-shadow: var(--sketch-shadow); }
+  .eyebrow { font-size: .75rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted-ink); }
+  .chip {
+    display: inline-flex; align-items: center; gap: .375rem; padding: .25rem .625rem;
+    border: 1px solid var(--line); border-radius: 999px; background: rgb(var(--ink-rgb) / .04);
+    font-size: .75rem; font-weight: 600; color: var(--ink-2);
+  }
+  .link { color: var(--ink); font-weight: 500; }
+
+  /* legacy text helpers, now flat colours from the system */
+  .text-gradient { color: var(--action); }
+  .text-gradient-hero { color: var(--ink); }
+  .text-gradient-gold { color: var(--accent); }
 }
 
-/* Hand-drawn corners for Tailwind-rounded blocks; rounded-full (avatars, pills) is untouched. */
-.rounded-lg, .rounded-xl, .rounded-2xl, .rounded-3xl { border-radius: var(--wobble); }
-
-/* ─── Animations ────────────────────────────────────────────────────────────── */
-@keyframes float {
-  0%   { transform: translateY(0px); }
-  50%  { transform: translateY(-10px); }
-  100% { transform: translateY(0px); }
+/* nav words rest bare, darken and draw a 1px line under the word; the current page holds a 2px bar */
+.nav-word {
+  position: relative; display: inline-flex; align-items: center; min-height: 44px; padding: 0 .375rem;
+  color: var(--ink-2); font-size: .9375rem; font-weight: 500; transition: color 120ms var(--ease);
 }
-
-@keyframes slide-up {
-  from { opacity: 0; transform: translateY(20px); }
-  to   { opacity: 1; transform: translateY(0); }
+.nav-word::after {
+  content: ''; position: absolute; left: .375rem; right: .375rem; bottom: 8px; height: 1px;
+  background: currentColor; transform: scaleX(0); transform-origin: right; transition: transform 120ms var(--ease);
 }
-
-@keyframes fade-in {
-  from { opacity: 0; }
-  to   { opacity: 1; }
+@media (hover: hover) and (pointer: fine) {
+  .nav-word:hover { color: var(--ink); }
+  .nav-word:hover::after { transform: scaleX(1); transform-origin: left; transition-duration: 150ms; }
 }
+.nav-word:focus-visible::after { transform: scaleX(1); }
+.nav-word[aria-current="page"] { color: var(--ink); }
+.nav-word[aria-current="page"]::after { height: 2px; background: var(--action); transform: scaleX(1); transition: none; }
 
-@keyframes pulse-glow-blue {
-  0%, 100% { box-shadow: 0 0 20px rgba(59, 130, 246, 0.2); }
-  50%       { box-shadow: 0 0 40px rgba(59, 130, 246, 0.45); }
+/* the hero's lit ground (software only): a still glow and a faint grid, nothing moves */
+.ground-lit {
+  background:
+    radial-gradient(55% 60% at 78% 30%, rgb(var(--action-rgb) / .11), transparent 70%),
+    radial-gradient(40% 45% at 8% 95%, rgb(var(--accent-rgb) / .06), transparent 70%),
+    var(--bg);
 }
-
-@keyframes pulse-glow-gold {
-  0%, 100% { box-shadow: 0 0 20px rgba(201, 168, 85, 0.15); }
-  50%       { box-shadow: 0 0 40px rgba(201, 168, 85, 0.35); }
-}
-
-@keyframes shimmer {
-  0%   { background-position: -200% center; }
-  100% { background-position: 200% center; }
+.ground-grid {
+  background-image:
+    linear-gradient(rgb(255 255 255 / .035) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / .035) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse at 60% 35%, #000 25%, transparent 72%);
 }
 
-@keyframes gradient-shift {
-  0%   { background-position: 0% 50%; }
-  50%  { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
+/* evidence: the sentence that earned a rubric point, lit when its point is chosen */
+/* the tint reaches past the words by box-shadow, never padding, so punctuation keeps its place
+   and two quotes that meet read as one run */
+mark.evidence {
+  color: var(--ink); background: rgb(var(--action-rgb) / .09); border-radius: 3px;
+  box-shadow: 0 0 0 .12em rgb(var(--action-rgb) / .09);
+  box-decoration-break: clone; -webkit-box-decoration-break: clone;
+  transition: background-color 150ms var(--ease), box-shadow 150ms var(--ease);
+}
+mark.evidence.is-on {
+  background: rgb(var(--action-rgb) / .3);
+  box-shadow: 0 0 0 .12em rgb(var(--action-rgb) / .3), 0 0 0 calc(.12em + 1px) rgb(var(--action-rgb) / .75);
 }
 
-@keyframes scan-line {
-  0%   { transform: translateY(-100%); opacity: 0; }
-  10%  { opacity: 0.6; }
-  90%  { opacity: 0.6; }
-  100% { transform: translateY(400%); opacity: 0; }
+/* the recording life sign: the dot stays, a ring grows and fades every 2.4 s */
+.live-dot { position: relative; display: inline-block; width: 10px; height: 10px; border-radius: 999px; background: #ef4444; }
+.live-dot::after {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; border: 2px solid #ef4444;
+  animation: live-ring 2.4s linear infinite;
+}
+@keyframes live-ring { from { transform: scale(1); opacity: .7; } to { transform: scale(2.6); opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .live-dot::after { animation: none; opacity: 0; }
+  mark.evidence, .nav-word::after { transition: none; }
 }
 
-.animate-float       { animation: float 6s ease-in-out infinite; }
-.animate-slide-up    { animation: slide-up 0.6s ease-out; }
-.animate-fade-in     { animation: fade-in 0.5s ease-out; }
-.animate-pulse-glow  { animation: pulse-glow-blue 3s ease-in-out infinite; }
-.animate-pulse-gold  { animation: pulse-glow-gold 3s ease-in-out infinite; }
-.animate-shimmer {
-  background-size: 200% auto;
-  animation: shimmer 3s linear infinite;
-}
-.animate-gradient {
-  background-size: 200% 200%;
-  animation: gradient-shift 4s ease infinite;
-}
-.animate-scan {
-  animation: scan-line 4s ease-in-out infinite;
-}
-
-/* ─── Scrollbar ─────────────────────────────────────────────────────────────── */
-::-webkit-scrollbar       { width: 6px; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb {
-  background: rgba(243, 236, 216, 0.3);
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover { background: rgba(201, 168, 85, 0.3); }
-
-/* ─── Selection ─────────────────────────────────────────────────────────────── */
-::selection { background: rgba(201, 168, 85, 0.25); }
+::-webkit-scrollbar-thumb { background: rgb(255 255 255 / .14); border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: rgb(255 255 255 / .24); }
