@@ -10,6 +10,7 @@ const NAV = [
     { to: '/practice', label: 'Practice' },
     { to: '/history', label: 'History' },
     { to: '/profile', label: 'Profile' },
+    { to: '/support', label: 'Help' },
 ];
 
 export const Header = () => {

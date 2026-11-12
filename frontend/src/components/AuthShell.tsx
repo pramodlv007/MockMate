@@ -31,7 +31,10 @@ export const AuthShell = ({ children }: { children: ReactNode }) => {
             <div className="flex items-center justify-center px-6 py-10 sm:px-10">
                 <div className="w-full max-w-md">
                     {children}
-                    <p className="mt-8 text-center text-sm text-muted"><Link to="/privacy" className="link">How we handle your data</Link></p>
+                    <p className="mt-8 flex justify-center gap-6 text-sm text-muted">
+                        <Link to="/support" className="link">Need help?</Link>
+                        <Link to="/privacy" className="link">How we handle your data</Link>
+                    </p>
                 </div>
             </div>
         </div>

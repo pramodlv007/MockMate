@@ -3,7 +3,7 @@ MockMate Auth Service — Port 8001
 Handles: signup, login, refresh token, logout, /users/me
 Refresh token stored in HttpOnly cookie; access token returned in JSON body.
 """
-from fastapi import FastAPI, Depends, HTTPException, status, Response, Cookie, Request
+from fastapi import FastAPI, Depends, HTTPException, status, Response, Cookie, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.responses import JSONResponse
@@ -12,13 +12,18 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
-import os, secrets, traceback, httpx
+import os, secrets, smtplib, traceback, httpx
+from email.message import EmailMessage
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 from dotenv import load_dotenv
 from pathlib import Path
 
 load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
 from . import models, schemas, utils
+from common import database
+from common.auth import get_optional_user_id, user_or_ip_key
 from common.database import get_db, create_tables
 
 create_tables()
@@ -30,6 +35,9 @@ def _find_user(db: Session, email: str):
 
 
 app = FastAPI(title="MockMate Auth Service", version="2.0.0")
+limiter = Limiter(key_func=user_or_ip_key, storage_uri=os.getenv("REDIS_URL") or "memory://")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -269,9 +277,78 @@ def delete_account(
     from services.interview.models import InterviewSession
     if db.query(InterviewSession.id).filter(InterviewSession.user_id == current_user.id).first():
         raise HTTPException(status_code=409, detail="Delete your interviews first.")
+    db.query(models.Feedback).filter(models.Feedback.user_id == current_user.id).delete()
     db.delete(current_user)
     db.commit()
     _clear_refresh_cookie(response)
+
+
+# ─── Support & reviews ────────────────────────────────────────────────────────
+FEEDBACK_TOPICS = {"interview": "Interview or practice problem", "account": "Account or sign-in",
+                   "privacy": "Privacy or my data", "idea": "Idea or feature request", "other": "Something else"}
+
+
+def _email_feedback(feedback_id) -> None:
+    """Runs after the response. Needs SMTP_HOST/SMTP_USER/SMTP_PASSWORD (Gmail: smtp.gmail.com + an app password);
+    without them the message stays in the feedback table only."""
+    host, user, password = os.getenv("SMTP_HOST"), os.getenv("SMTP_USER"), os.getenv("SMTP_PASSWORD")
+    if not (host and user and password):
+        print("[Feedback] SMTP not configured; message kept in the feedback table only")
+        return
+    db = database.SessionLocal()
+    try:
+        f = db.get(models.Feedback, feedback_id)
+        msg = EmailMessage()
+        # subject is built from validated fields only; the user's text stays in the body
+        msg["Subject"] = (f"[MockMate review] {f.rating}/5" if f.kind == "review"
+                          else f"[MockMate support] {FEEDBACK_TOPICS.get(f.category or 'other')}")
+        msg["From"] = user
+        msg["To"] = os.getenv("FEEDBACK_TO", "mockmate.site@gmail.com")
+        msg["Reply-To"] = f.email
+        msg.set_content("\n".join([
+            f.message, "", "---",
+            f"From: {f.email}",
+            f"Account: {f.user_id or 'not signed in'}",
+            f"Page: {f.page or '-'}",
+            f"Sent: {f.created_at:%Y-%m-%d %H:%M} UTC",
+            f"ID: {f.id}",
+        ]))
+        with smtplib.SMTP(host, int(os.getenv("SMTP_PORT", "587")), timeout=20) as s:
+            s.starttls()
+            s.login(user, password)
+            s.send_message(msg)
+        f.emailed_at = datetime.utcnow()
+        db.commit()
+    except Exception as e:
+        print(f"[Feedback] email failed for {feedback_id}: {e!r}")
+    finally:
+        db.close()
+
+
+@app.post("/users/feedback", status_code=201)
+@limiter.limit(os.getenv("FEEDBACK_RATE_LIMIT", "5/hour"))
+def send_feedback(
+    request: Request,
+    body: schemas.FeedbackIn,
+    background: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user_id: Optional[str] = Depends(get_optional_user_id),
+):
+    """Help requests and reviews, signed in or not. Stored first, then emailed to the team inbox."""
+    import uuid
+    user = db.query(models.User).filter(models.User.id == uuid.UUID(user_id)).first() if user_id else None
+    email = body.email or (user.email if user else None)
+    if not email:
+        raise HTTPException(status_code=400, detail="Please add your email so we can reply.")
+    if body.kind == "review" and not body.rating:
+        raise HTTPException(status_code=400, detail="Please choose a star rating.")
+    f = models.Feedback(kind=body.kind, category=body.category if body.kind == "support" else None,
+                        rating=body.rating if body.kind == "review" else None, message=body.message.strip(),
+                        email=str(email), user_id=user.id if user else None, page=body.page)
+    db.add(f)
+    db.commit()
+    background.add_task(_email_feedback, f.id)
+    return {"id": str(f.id)}
 
 
 # ─── Update Profile ───────────────────────────────────────────────────────────

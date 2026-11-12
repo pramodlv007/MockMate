@@ -256,6 +256,8 @@ export const endpoints = {
     updateProfile: (data: ProfileUpdate) => api.put<User>('/users/me/profile', data),
     acceptPrivacy: () => api.post<User>('/users/me/privacy'),
     deleteAccount: () => api.delete('/users/me'),
+    sendFeedback: (data: { kind: 'support' | 'review'; message: string; rating?: number; category?: string; email?: string; page?: string }) =>
+        api.post<{ id: string }>('/users/feedback', data),
 
     // Interviews
     createInterview: (data: CreateInterviewPayload) =>

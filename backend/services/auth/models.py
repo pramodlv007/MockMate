@@ -34,3 +34,19 @@ class User(Base):
     privacy_accepted_at = Column(DateTime, nullable=True)  # when the privacy notice was last accepted
     created_at        = Column(DateTime, default=datetime.utcnow)
     updated_at        = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Feedback(Base):
+    """Support requests and reviews. Kept even if email delivery fails, so nothing is lost."""
+    __tablename__ = "feedback"
+
+    id          = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    kind        = Column(String, nullable=False)          # support | review
+    category    = Column(String, nullable=True)           # support topic
+    rating      = Column(Integer, nullable=True)          # review stars, 1-5
+    message     = Column(Text, nullable=False)
+    email       = Column(String, nullable=False)          # where the reply goes
+    user_id     = Column(UUID(as_uuid=True), index=True, nullable=True)  # null when sent signed out
+    page        = Column(String, nullable=True)           # where in the app it was sent from
+    created_at  = Column(DateTime, default=datetime.utcnow)
+    emailed_at  = Column(DateTime, nullable=True)         # null = not delivered to the inbox (yet)

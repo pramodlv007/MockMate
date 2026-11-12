@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Gauge, toneOf } from '../components/Gauge';
+import { ReviewPrompt } from '../components/ReviewPrompt';
 import { endpoints } from '../api';
 import type { InterviewSession, EvaluationFeedback, PerQuestionResult, Mistake } from '../api';
 import {
@@ -270,6 +271,8 @@ export const Results = () => {
                     </div>
                 </div>
             </div>
+
+            <ReviewPrompt from={`/results/${session.id}`} />
 
             {/* ── Tab Navigation ───────────────────────────────────────────── */}
             {/* one ink pill slides to the chosen tab by transform alone (taste-skill tabs, 240ms) */}

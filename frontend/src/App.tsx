@@ -11,6 +11,7 @@ import { Practice } from './pages/Practice';
 import { Login } from './pages/Login';
 import { Signup } from './pages/Signup';
 import { Privacy } from './pages/Privacy';
+import { Support } from './pages/Support';
 import { ConsentGate } from './components/ConsentGate';
 import { needsPrivacyConsent } from './lib/privacy';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -95,6 +96,7 @@ function AppRoutes() {
           <Route path="/login" element={isAuthenticated ? <Navigate to="/" /> : <Login />} />
           <Route path="/signup" element={isAuthenticated ? <Navigate to="/" /> : <Signup />} />
           <Route path="/privacy" element={<Privacy />} />
+          <Route path="/support" element={<Support />} />
 
           <Route path="/" element={<ProtectedRoute><Home /></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />

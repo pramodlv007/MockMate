@@ -1,5 +1,5 @@
-from pydantic import BaseModel, EmailStr
-from typing import Optional
+from pydantic import BaseModel, EmailStr, Field
+from typing import Literal, Optional
 from datetime import datetime
 from uuid import UUID
 
@@ -34,6 +34,15 @@ class ProfileUpdate(BaseModel):
     portfolio_url: Optional[str] = None
     bio: Optional[str] = None
     resume_text: Optional[str] = None
+
+
+class FeedbackIn(BaseModel):
+    kind: Literal["support", "review"]
+    message: str = Field(min_length=10, max_length=5000)
+    rating: Optional[int] = Field(default=None, ge=1, le=5)
+    category: Optional[Literal["interview", "account", "privacy", "idea", "other"]] = None
+    email: Optional[EmailStr] = None    # required when signed out; defaults to the account email
+    page: Optional[str] = Field(default=None, max_length=200)
 
 
 # ─── Output Schemas ────────────────────────────────────────────────────────────
