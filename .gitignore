@@ -41,3 +41,4 @@ aws-exports.js
 *.tfvars
 !*.tfvars.example
 .terraform.lock.hcl.bak
+.venv-modal/
