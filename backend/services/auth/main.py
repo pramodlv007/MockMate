@@ -289,7 +289,7 @@ FEEDBACK_TOPICS = {"interview": "Interview or practice problem", "account": "Acc
 
 
 def _email_feedback(feedback_id) -> None:
-    """Runs after the response. Needs SMTP_HOST/SMTP_USER/SMTP_PASSWORD (Gmail: smtp.gmail.com + an app password);
+    """Runs after the response. Needs SMTP_HOST/SMTP_USER/SMTP_PASSWORD (Gmail + app password, or a relay such as Brevo);
     without them the message stays in the feedback table only."""
     host, user, password = os.getenv("SMTP_HOST"), os.getenv("SMTP_USER"), os.getenv("SMTP_PASSWORD")
     if not (host and user and password):
@@ -302,7 +302,7 @@ def _email_feedback(feedback_id) -> None:
         # subject is built from validated fields only; the user's text stays in the body
         msg["Subject"] = (f"[MockMate review] {f.rating}/5" if f.kind == "review"
                           else f"[MockMate support] {FEEDBACK_TOPICS.get(f.category or 'other')}")
-        msg["From"] = user
+        msg["From"] = os.getenv("SMTP_FROM") or user   # relays like Brevo log in with an ID that is not an address
         msg["To"] = os.getenv("FEEDBACK_TO", "mockmate.site@gmail.com")
         msg["Reply-To"] = f.email
         msg.set_content("\n".join([

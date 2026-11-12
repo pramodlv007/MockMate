@@ -11,7 +11,7 @@
 #
 # Required GitHub Secrets: EC2_HOST, EC2_USER, EC2_SSH_KEY, VITE_API_URL
 # Optional: VITE_GOOGLE_CLIENT_ID (Google sign-in button; backend also needs GOOGLE_CLIENT_ID in EC2 .env)
-#           SMTP_PASSWORD (Gmail app password for mockmate.site@gmail.com: help and review emails)
+#           SMTP_PASSWORD (+ SMTP_HOST, SMTP_USER for a relay such as Brevo): help and review emails; Gmail if only the password is set
 # The registry login uses the built-in GITHUB_TOKEN; no extra secret needed.
 # EC2 keeps its runtime config in ~/MockMate/.env (never baked into the image).
 # ─────────────────────────────────────────────────────────────────────────────
@@ -152,14 +152,18 @@ jobs:
       - name: Deploy backend container
         env:
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
         run: |
           SSH="ssh -i ~/.ssh/ec2.pem -o StrictHostKeyChecking=no -o ServerAliveInterval=30 ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}"
           # token goes over stdin, never on the remote command line; it expires when this job ends
           echo "${{ secrets.GITHUB_TOKEN }}" | $SSH "docker login ghcr.io -u ${{ github.actor }} --password-stdin"
-          # Gmail app password for help/review emails: also over stdin, replacing any SMTP lines in the server .env
+          # Email login for help/review messages, also over stdin, replacing any SMTP lines in the server .env.
+          # Only SMTP_PASSWORD set = Gmail app password; add SMTP_HOST + SMTP_USER secrets for a relay such as Brevo.
           if [ -n "$SMTP_PASSWORD" ]; then
-            printf '%s\n' "SMTP_HOST=smtp.gmail.com" "SMTP_PORT=587" "SMTP_USER=mockmate.site@gmail.com" "SMTP_PASSWORD=${SMTP_PASSWORD// /}" \
-              | $SSH 'cd ~/MockMate && { grep -vE "^SMTP_(HOST|PORT|USER|PASSWORD)=" .env; cat; } > .env.new && chmod 600 .env.new && mv .env.new .env'
+            printf '%s\n' "SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}" "SMTP_PORT=587" "SMTP_USER=${SMTP_USER:-mockmate.site@gmail.com}" \
+                "SMTP_FROM=mockmate.site@gmail.com" "SMTP_PASSWORD=${SMTP_PASSWORD// /}" \
+              | $SSH 'cd ~/MockMate && { grep -vE "^SMTP_(HOST|PORT|USER|FROM|PASSWORD)=" .env; cat; } > .env.new && chmod 600 .env.new && mv .env.new .env'
             echo "==> SMTP settings written to the server .env"
           fi
           $SSH "IMAGE=$IMAGE bash -s" << 'ENDSSH'
