@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import api, { endpoints, type ProfileUpdate } from '../api';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -65,7 +66,7 @@ function LinkRow({ icon, label, url }: { icon: React.ReactNode; label: string; u
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export const Profile = () => {
-    const { user: authUser, refreshUser } = useAuth();
+    const { user: authUser, refreshUser, deleteAccount } = useAuth();
     const [isEditing, setIsEditing] = useState(false);
     const [loading, setLoading] = useState(false);
     const [saveSuccess, setSaveSuccess] = useState(false);
@@ -90,6 +91,9 @@ export const Profile = () => {
     const [resumePreview, setResumePreview] = useState('');
     const [dragOver, setDragOver] = useState(false);
     const [existingResume, setExistingResume] = useState(false);
+    const [resumeConsent, setResumeConsent] = useState(false);
+    const [dataBusy, setDataBusy] = useState<'' | 'resume' | 'account'>('');
+    const [dataError, setDataError] = useState('');
 
     // Sync form state from authUser
     useEffect(() => {
@@ -104,7 +108,7 @@ export const Profile = () => {
                 education: authUser.education || '',
                 bio: authUser.bio || '',
             });
-            if ((authUser as any).resume_text) setExistingResume(true);
+            setExistingResume(!!authUser.resume_text);
         }
     }, [authUser]);
 
@@ -145,6 +149,7 @@ export const Profile = () => {
     };
 
     const handleResumeUpload = async (file: File) => {
+        if (!resumeConsent) { setResumeError('Please tick the box above to agree before uploading.'); return; }
         setResumeError('');
         setResumeUploaded(false);
         setResumePreview('');
@@ -166,6 +171,27 @@ export const Profile = () => {
             setResumeUploading(false);
         }
     };
+
+    const runDataAction = async (kind: 'resume' | 'account', question: string, fn: () => Promise<void>) => {
+        if (!window.confirm(question)) return;
+        setDataBusy(kind);
+        setDataError('');
+        try {
+            await fn();
+        } catch (e: any) {
+            const d = e?.response?.data?.detail;
+            setDataError(typeof d === 'string' ? d : 'That did not work. Please try again.');
+        } finally {
+            setDataBusy('');
+        }
+    };
+
+    const removeResume = () => runDataAction('resume', 'Remove your resume from MockMate?', async () => {
+        await endpoints.updateProfile({ resume_text: '' });
+        await refreshUser();
+        setResumeUploaded(false);
+        setResumePreview('');
+    });
 
     const handleFileDrop = (e: React.DragEvent) => {
         e.preventDefault();
@@ -298,6 +324,10 @@ export const Profile = () => {
                                         <p className="text-green-400 text-sm font-medium">Resume on file</p>
                                         <p className="text-slate-500 text-xs mt-0.5">AI interview questions use your resume</p>
                                     </div>
+                                    <button type="button" onClick={removeResume} disabled={!!dataBusy}
+                                        className="ml-auto text-xs text-danger hover:underline">
+                                        {dataBusy === 'resume' ? 'Removing…' : 'Remove'}
+                                    </button>
                                 </div>
                             ) : (
                                 <div className="flex items-center gap-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
@@ -406,6 +436,22 @@ export const Profile = () => {
                 </div>
             )}
 
+            {!isEditing && (
+                <section className="surface mt-5 space-y-3" aria-labelledby="your-data-h">
+                    <h2 id="your-data-h" className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Your data</h2>
+                    <p className="text-sm text-soft">
+                        Read the <Link to="/privacy" className="link">privacy notice</Link> for what MockMate keeps and why.
+                        Deleting your account removes your profile, resume and every interview with its recording. It can't be undone.
+                    </p>
+                    {dataError && <p role="alert" className="text-sm text-danger">{dataError}</p>}
+                    <button type="button" disabled={!!dataBusy}
+                        onClick={() => runDataAction('account', 'Delete your account and everything in it? This cannot be undone.', deleteAccount)}
+                        className="btn btn--secondary border-danger/40 text-danger">
+                        {dataBusy === 'account' ? <><Loader size={16} className="animate-spin" /> Deleting account…</> : 'Delete my account'}
+                    </button>
+                </section>
+            )}
+
             {/* ── EDIT MODE ─────────────────────────────────────────────────── */}
             {isEditing && (
                 <div className="space-y-5">
@@ -420,6 +466,15 @@ export const Profile = () => {
                             </span>
                         </h2>
 
+                        <label className="flex cursor-pointer items-start gap-3 text-sm text-soft">
+                            <input type="checkbox" checked={resumeConsent} onChange={e => setResumeConsent(e.target.checked)}
+                                className="mt-0.5 h-5 w-5 flex-shrink-0 accent-emerald-500" />
+                            <span>
+                                I agree that MockMate keeps the text of my resume in my profile and sends it to Google Gemini
+                                to tailor my questions and feedback. The file itself isn't kept, and I can remove the text at any time.
+                            </span>
+                        </label>
+
                         <div
                             className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all duration-200 ${
                                 dragOver ? 'border-green-400 bg-green-500/10' : 'border-slate-600 hover:border-slate-500 hover:bg-white/5'
@@ -428,6 +483,8 @@ export const Profile = () => {
                             onDragLeave={() => setDragOver(false)}
                             onDrop={handleFileDrop}
                             onClick={() => fileInputRef.current?.click()}
+                            aria-disabled={!resumeConsent}
+                            style={resumeConsent ? undefined : { opacity: 0.5 }}
                         >
                             <input
                                 ref={fileInputRef}

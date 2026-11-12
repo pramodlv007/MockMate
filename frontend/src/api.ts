@@ -89,6 +89,8 @@ export interface User {
     is_verified: boolean;
     created_at: string;
     last_login_at?: string;
+    resume_text?: string;
+    privacy_accepted_at?: string | null;
 }
 
 export interface AuthResponse {
@@ -107,6 +109,7 @@ export interface ProfileUpdate {
     linkedin_url?: string;
     portfolio_url?: string;
     bio?: string;
+    resume_text?: string;
 }
 
 export interface Question {
@@ -251,6 +254,8 @@ export const endpoints = {
     // User
     getMe: () => api.get<User>('/users/me'),
     updateProfile: (data: ProfileUpdate) => api.put<User>('/users/me/profile', data),
+    acceptPrivacy: () => api.post<User>('/users/me/privacy'),
+    deleteAccount: () => api.delete('/users/me'),
 
     // Interviews
     createInterview: (data: CreateInterviewPayload) =>

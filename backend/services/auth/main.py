@@ -33,11 +33,9 @@ app = FastAPI(title="MockMate Auth Service", version="2.0.0")
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    tb = traceback.format_exc()
-    return JSONResponse(
-        status_code=500,
-        content={"error": str(exc), "type": type(exc).__name__, "traceback": tb}
-    )
+    # details go to the server log only: error text can contain SQL, file paths or the user's own data
+    traceback.print_exception(type(exc), exc, exc.__traceback__)
+    return JSONResponse(status_code=500, content={"detail": "Something went wrong on our side. Please try again."})
 
 
 # ─── JWT config ───────────────────────────────────────────────────────────────
@@ -114,6 +112,8 @@ def health():
 # ─── Signup ───────────────────────────────────────────────────────────────────
 @app.post("/auth/signup", response_model=schemas.AuthResponse)
 def signup(user_in: schemas.UserCreate, response: Response, db: Session = Depends(get_db)):
+    if not user_in.accept_privacy:
+        raise HTTPException(status_code=400, detail="Please confirm you are 18 or older and accept the privacy notice.")
     if _find_user(db, user_in.email):
         raise HTTPException(status_code=400, detail="Email already registered")
 
@@ -128,6 +128,7 @@ def signup(user_in: schemas.UserCreate, response: Response, db: Session = Depend
         github_url=user_in.github_url,
         linkedin_url=user_in.linkedin_url,
         portfolio_url=user_in.portfolio_url,
+        privacy_accepted_at=datetime.utcnow(),
     )
     db.add(user)
     db.commit()
@@ -246,6 +247,31 @@ def get_my_interviews(
 ):
     """Stub — the interview service manages sessions. Gateway calls interview service directly."""
     return []
+
+
+@app.post("/users/me/privacy", response_model=schemas.UserOut)
+def accept_privacy(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Records that the user accepted the current privacy notice (Google sign-ups and older accounts)."""
+    current_user.privacy_accepted_at = datetime.utcnow()
+    db.commit()
+    db.refresh(current_user)
+    return current_user
+
+
+@app.delete("/users/me", status_code=204)
+def delete_account(
+    response: Response,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Deletes the account. Interviews go first through DELETE /interviews/{id}, which also removes the
+    recording from storage, so this refuses while any remain rather than orphaning a recording."""
+    from services.interview.models import InterviewSession
+    if db.query(InterviewSession.id).filter(InterviewSession.user_id == current_user.id).first():
+        raise HTTPException(status_code=409, detail="Delete your interviews first.")
+    db.delete(current_user)
+    db.commit()
+    _clear_refresh_cookie(response)
 
 
 # ─── Update Profile ───────────────────────────────────────────────────────────

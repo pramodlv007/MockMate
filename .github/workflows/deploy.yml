@@ -107,7 +107,7 @@ jobs:
           curl -sf localhost:8000/rubric/health | grep -q '"ok"'
           # a real DB write catches schema drift (the old signup 500)
           curl -sf -X POST localhost:8000/auth/signup -H 'Content-Type: application/json' \
-            -d "{\"email\":\"ci-${GITHUB_RUN_ID}@example.com\",\"password\":\"Passw0rd!x\",\"full_name\":\"CI\"}" \
+            -d "{\"email\":\"ci-${GITHUB_RUN_ID}@example.com\",\"password\":\"Passw0rd!x\",\"full_name\":\"CI\",\"accept_privacy\":true}" \
             | grep -q access_token
           echo "Smoke test passed"
       - name: Container logs on failure

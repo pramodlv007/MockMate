@@ -31,5 +31,6 @@ class User(Base):
     is_active         = Column(Boolean, default=True)
 
     last_login_at     = Column(DateTime, nullable=True)
+    privacy_accepted_at = Column(DateTime, nullable=True)  # when the privacy notice was last accepted
     created_at        = Column(DateTime, default=datetime.utcnow)
     updated_at        = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

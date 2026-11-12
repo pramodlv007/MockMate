@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { endpoints } from '../api';
 import { Video, Loader2, UserCircle, ShieldAlert } from 'lucide-react';
 
@@ -186,6 +186,7 @@ export const InterviewSetup = () => {
                         I consent to MockMate recording my camera and microphone during this interview, and to the
                         recording being sent to Google Gemini for transcription and feedback. Recordings are kept for
                         up to 30 days, and I can delete this interview and its recording at any time from History.
+                        {' '}<Link to="/privacy" target="_blank" className="link">Privacy notice</Link>
                     </span>
                 </label>
 

@@ -16,6 +16,7 @@ class UserCreate(BaseModel):
     github_url: Optional[str] = None
     linkedin_url: Optional[str] = None
     portfolio_url: Optional[str] = None
+    accept_privacy: bool = False
 
 
 class GoogleLogin(BaseModel):
@@ -52,6 +53,7 @@ class UserOut(BaseModel):
     is_verified: bool = False
     created_at: datetime
     last_login_at: Optional[datetime] = None
+    privacy_accepted_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True

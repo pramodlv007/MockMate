@@ -10,6 +10,9 @@ import { History } from './pages/History';
 import { Practice } from './pages/Practice';
 import { Login } from './pages/Login';
 import { Signup } from './pages/Signup';
+import { Privacy } from './pages/Privacy';
+import { ConsentGate } from './components/ConsentGate';
+import { needsPrivacyConsent } from './lib/privacy';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import type { ReactNode } from 'react';
 import { TriangleAlert } from 'lucide-react';
@@ -69,8 +72,9 @@ function useWarmup() {
 }
 
 const ProtectedRoute = ({ children }: { children: ReactNode }) => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (needsPrivacyConsent(user)) return <ConsentGate />;
   return <>{children}</>;
 };
 
@@ -90,6 +94,7 @@ function AppRoutes() {
         <Routes>
           <Route path="/login" element={isAuthenticated ? <Navigate to="/" /> : <Login />} />
           <Route path="/signup" element={isAuthenticated ? <Navigate to="/" /> : <Signup />} />
+          <Route path="/privacy" element={<Privacy />} />
 
           <Route path="/" element={<ProtectedRoute><Home /></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />

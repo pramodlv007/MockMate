@@ -48,11 +48,9 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    tb = traceback.format_exc()
-    return JSONResponse(
-        status_code=500,
-        content={"error": str(exc), "type": type(exc).__name__, "traceback": tb}
-    )
+    # details go to the server log only: error text can contain SQL, file paths or the user's own data
+    traceback.print_exception(type(exc), exc, exc.__traceback__)
+    return JSONResponse(status_code=500, content={"detail": "Something went wrong on our side. Please try again."})
 
 @app.get("/health")
 def health():

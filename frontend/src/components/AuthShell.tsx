@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { Logo } from './Logo';
 import { RubricDemo } from './RubricDemo';
 import { useHeroEntrance } from '../lib/motion';
@@ -28,7 +29,10 @@ export const AuthShell = ({ children }: { children: ReactNode }) => {
 
             {/* App wraps every page in <main id="main">, so this column is a plain box */}
             <div className="flex items-center justify-center px-6 py-10 sm:px-10">
-                <div className="w-full max-w-md">{children}</div>
+                <div className="w-full max-w-md">
+                    {children}
+                    <p className="mt-8 text-center text-sm text-muted"><Link to="/privacy" className="link">How we handle your data</Link></p>
+                </div>
             </div>
         </div>
     );

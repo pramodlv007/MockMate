@@ -19,6 +19,7 @@ interface SignupData {
     github_url?: string;
     linkedin_url?: string;
     portfolio_url?: string;
+    accept_privacy: boolean;
 }
 
 interface AuthContextType {
@@ -29,6 +30,8 @@ interface AuthContextType {
     googleLogin: (credential: string) => Promise<void>;
     logout: () => Promise<void>;
     refreshUser: () => Promise<void>;
+    acceptPrivacy: () => Promise<void>;
+    deleteAccount: () => Promise<void>;
     isAuthenticated: boolean;
 }
 
@@ -114,9 +117,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     // ── Refresh user (call after profile updates) ──────────────────────────────
     const refreshUser = async () => { await fetchUser(); };
 
+    const acceptPrivacy = async () => {
+        const res = await endpoints.acceptPrivacy();
+        setUser(res.data);
+    };
+
+    // Interviews first: each delete also removes its recording, and the server refuses to drop an
+    // account that still has any, so a failure part-way leaves the account in place to retry.
+    const deleteAccount = async () => {
+        const { data: sessions } = await endpoints.getUserInterviews();
+        for (const s of sessions) await endpoints.deleteInterview(s.id);
+        await endpoints.deleteAccount();
+        setAccessToken(null);
+        setUser(null);
+    };
+
     return (
         <AuthContext.Provider value={{
-            user, loading, login, signup, googleLogin, logout, refreshUser,
+            user, loading, login, signup, googleLogin, logout, refreshUser, acceptPrivacy, deleteAccount,
             isAuthenticated: !!user,
         }}>
             {!loading && children}

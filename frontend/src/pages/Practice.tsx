@@ -238,6 +238,7 @@ export const Practice = () => {
                                                 {mic.recording
                                                     ? <button className="btn btn--primary btn--xl w-full" onClick={mic.stop}><Square size={16} aria-hidden="true" />Stop and grade</button>
                                                     : <button className="btn btn--primary btn--xl w-full" onClick={record}><Mic size={18} aria-hidden="true" />Record answer</button>}
+                                                <p className="text-xs text-muted">The audio is turned into text on our server and deleted right away. The text goes to Google Gemini for grading and isn't saved.</p>
                                             </>
                                         ) : (
                                             <p className="text-sm text-muted">Recording needs HTTPS. Type your answer instead.</p>

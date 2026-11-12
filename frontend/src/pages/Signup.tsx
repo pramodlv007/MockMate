@@ -1,5 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { GoogleButton } from '../components/GoogleButton';
+import { PrivacyConsent } from '../components/PrivacyConsent';
 import { AuthShell } from '../components/AuthShell';
 import { useState, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -57,6 +58,7 @@ export const Signup = () => {
     const [role, setRole] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirm, setShowConfirm] = useState(false);
+    const [agreed, setAgreed] = useState(false);
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
 
@@ -71,7 +73,7 @@ export const Signup = () => {
         setIsLoading(true);
         setError('');
         try {
-            await signup({ email, password, full_name: fullName, target_role: role });
+            await signup({ email, password, full_name: fullName, target_role: role, accept_privacy: agreed });
             navigate('/');
         } catch (err: any) {
             setError(parseError(err));
@@ -145,6 +147,8 @@ export const Signup = () => {
                         <RevealButton id="toggle-confirm-password" shown={showConfirm} onClick={() => setShowConfirm((v) => !v)} />
                     </div>
                 </Field>
+
+                <PrivacyConsent id="signup-privacy" checked={agreed} onChange={setAgreed} />
 
                 {error && (
                     <p id="signup-error-banner" role="alert" className="rounded-btn border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
