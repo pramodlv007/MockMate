@@ -1,0 +1,47 @@
+{
+  "run_at": "2026-11-13T03:06:07+00:00",
+  "config": {
+    "llm_model": "Qwen/Qwen3-8B-FP8",
+    "engine": "vllm 0.21.0",
+    "gpu": "1x NVIDIA L4 (Modal)",
+    "flags": "--max-model-len 8192 --gpu-memory-utilization 0.80 --enable-prefix-caching --enable-lora --max-loras 2 --max-lora-rank 16 --structured-outputs-config {backend: xgrammar, disable_any_whitespace: true} --default-chat-template-kwargs {enable_thinking: false}",
+    "whisper": "faster-whisper 1.2.1, large-v3-turbo, float16, vad_filter",
+    "scaledown_window_s": 120,
+    "json_calls": 50
+  },
+  "llm_cold_start_s": 726.6,
+  "auth": {
+    "no_token": 401,
+    "wrong_token": 401
+  },
+  "check_a": {
+    "calls": 50,
+    "ok_http": 50,
+    "json_valid": 50,
+    "thinking_seen": 0,
+    "latency_s": {
+      "p50": 3.469,
+      "p95": 5.296,
+      "max": 7.641
+    },
+    "completion_tokens_mean": 90,
+    "decode_tok_per_s_mean": 24.2,
+    "example": "{\"score\": 60, \"strengths\": [\"The candidate identified the root cause (DB connection pool exhaustion) and took corrective action (rolling back the deploy).\", \"They implemented a preventive measure (adding a pool limit alert).\", \"They documented the incident (postmortem).\"], \"gaps\": [\"The candidate did not mention the impact of the outage or how they communicated with stakeholders.\", \"There's no detail on the time taken to resolve the issue or the steps taken to prevent recurrence in the future.\"], \"summary\": \"The answer shows basic problem-solving skills but lacks depth in communication, impact assessment, and detailed resolution steps.\"}"
+  },
+  "check_b": {
+    "base_http": 200,
+    "lora_http": 200,
+    "identical_output": true,
+    "lora_error": null
+  },
+  "whisper": {
+    "http": 200,
+    "no_token_http": 401,
+    "first_call_s": 2.1,
+    "warm_call_s": 0.94,
+    "audio_s": 14.64,
+    "processing_s": 1.67,
+    "words_with_timestamps": 41,
+    "text": "In my last internship I led the migration of our billing service to Kubernetes. The main challenge was zero downtime, so I set up a blue-green deployment with health checks, and we cut deploy time from 40 minutes to 6."
+  }
+}

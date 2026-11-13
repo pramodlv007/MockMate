@@ -25,6 +25,7 @@ MINUTES = 60
 IDLE = 2 * MINUTES             # scale-to-zero after this much idle time; each idle window is billed
 LLM_MODEL = "Qwen/Qwen3-8B-FP8"
 LLM_NAME = "qwen3-8b"
+FAST_BOOT = False              # compiled graphs are cached in the vllm-cache volume after the first boot
 WHISPER_MODEL = "large-v3-turbo"
 PORT = 8000
 HF_CACHE = "/root/.cache/huggingface"
@@ -47,7 +48,8 @@ whisper_image = (
     # ctranslate2 (under faster-whisper) needs CUDA 12 + cuDNN 9, which this runtime image ships
     modal.Image.from_registry("nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04", add_python="3.12")
     .entrypoint([])
-    .uv_pip_install("faster-whisper==1.2.1", "fastapi[standard]==0.115.12")
+    # av 16+ dropped open(metadata_errors=...), which faster-whisper 1.2.1 still passes
+    .uv_pip_install("faster-whisper==1.2.1", "av==15.1.0", "fastapi[standard]==0.115.12")
 )
 
 
@@ -75,9 +77,12 @@ def llm():
         "--enable-prefix-caching",
         "--enable-lora", "--max-loras", "2", "--max-lora-rank", "16",
         "--default-chat-template-kwargs", json.dumps({"enable_thinking": False}),
-        # skips torch.compile + CUDA-graph capture: faster cold start, somewhat lower throughput
-        "--enforce-eager",
+        # JSON grammars allow unlimited whitespace; at temperature > 0 Qwen sometimes loops on newlines
+        # until max_tokens (4/50 replies on day one). Only xgrammar/guidance support turning that off.
+        "--structured-outputs-config", json.dumps({"backend": "xgrammar", "disable_any_whitespace": True}),
     ]
+    if FAST_BOOT:  # skip torch.compile + CUDA graphs: shorter cold start, slower decoding
+        cmd.append("--enforce-eager")
     if adapters:
         cmd += ["--lora-modules", *adapters]
     # vLLM checks VLLM_API_KEY on every /v1 route (/health stays open for readiness checks)

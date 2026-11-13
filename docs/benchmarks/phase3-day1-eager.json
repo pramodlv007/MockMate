@@ -1,0 +1,47 @@
+{
+  "run_at": "2026-11-13T02:42:05+00:00",
+  "config": {
+    "llm_model": "Qwen/Qwen3-8B-FP8",
+    "engine": "vllm 0.21.0",
+    "gpu": "1x NVIDIA L4 (Modal)",
+    "flags": "--max-model-len 8192 --gpu-memory-utilization 0.80 --enable-prefix-caching --enable-lora --max-loras 2 --max-lora-rank 16 --enforce-eager --default-chat-template-kwargs {enable_thinking: false}",
+    "whisper": "faster-whisper 1.2.1, large-v3-turbo, float16, vad_filter",
+    "scaledown_window_s": 120,
+    "json_calls": 50
+  },
+  "llm_cold_start_s": 0.2,
+  "auth": {
+    "no_token": 401,
+    "wrong_token": 401
+  },
+  "check_a": {
+    "calls": 50,
+    "ok_http": 50,
+    "json_valid": 46,
+    "thinking_seen": 0,
+    "latency_s": {
+      "p50": 12.125,
+      "p95": 37.046,
+      "max": 40.36
+    },
+    "completion_tokens_mean": 150.3,
+    "decode_tok_per_s_mean": 10.5,
+    "example": "{\n  \"score\": 3,\n  \"strengths\": [\n    \"Candidate describes a specific incident with a clear timeline.\",\n    \"Includes actions taken to resolve the issue (checking dashboards, rolling back deploy).\"\n  ],\n  \"gaps\": [\n    \"Lacks details on root cause analysis or how the issue was prevented in the future beyond adding an alert.\",\n    \"Does not mention collaboration with team members or communication with stakeholders.\",\n    \"No indication of learning from the incident or process improvements.\"\n  ],\n  \"summary\": \"The candidate provides a basic account of handling a production outage but lacks depth in root cause analysis, team collaboration, and long-term prevention strategies.\"\n}"
+  },
+  "check_b": {
+    "base_http": 200,
+    "lora_http": 200,
+    "identical_output": true,
+    "lora_error": null
+  },
+  "whisper": {
+    "http": 500,
+    "no_token_http": 401,
+    "first_call_s": 0.5,
+    "warm_call_s": 0.33,
+    "audio_s": null,
+    "processing_s": null,
+    "words_with_timestamps": 0,
+    "text": "Internal Server Error"
+  }
+}
