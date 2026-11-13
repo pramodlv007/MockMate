@@ -15,7 +15,7 @@ Boot timings come from the vLLM container log (`modal app logs mockmate-inferenc
 | (a) thinking off | 0/50 replies had a `<think>` block or reasoning field |
 | (a) structured JSON | 50/50 parsed and matched the schema (compiled run, `disable_any_whitespace`). The eager run without that flag got 46/50: all 4 failures were newline loops until `max_tokens` |
 | (b) LoRA on FP8 | No-op rank-8 q/v adapter loaded on the FP8 weights; temperature-0 output identical to the base model, so FP8 stays |
-| (c) idle window billed? | Pending: read from the Modal usage page |
+| (c) idle window billed? | **Yes.** Modal usage page: $0.88 for all of day one, about 66 L4-minutes at $0.000222/s. Requests account for ~15 min; the rest is boots plus the 120 s idle window before scale-down. Waiting for a GPU to be scheduled isn't billed (no container exists yet) |
 | Auth | 401 without a token and with a wrong token (LLM and Whisper) |
 
 ## LLM: eager vs compiled (50 sequential grading calls, temperature 0.7, max 400 tokens)
@@ -35,6 +35,12 @@ Weights: 8.79 GiB, downloaded once in 51 s, then loaded from the volume in ~7 s.
 - Transcript matched the script word for word: 41 words, each with a timestamp.
 - Processing 1.67 s; warm request 0.94 s end to end; first request 2.1 s.
 - GPU memory after load: 2,147 MiB of 23,034 MiB.
+
+## What a cold interview costs (estimate from the measured boot times, not yet from real interviews)
+
+LLM: ~5 min boot + ~1 min work + 2 min idle ≈ 8 min ≈ $0.11. Whisper: ~1 min boot + 2 min idle ≈ $0.04.
+That's **≈ $0.15 per interview when both start cold**, so ~200 cold interviews fit in the $30 monthly credit.
+Interviews that arrive while the containers are warm cost much less. Step 2 will measure this from real runs.
 
 ## Not yet measured / caveats
 
