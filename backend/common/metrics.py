@@ -25,6 +25,12 @@ LLM_LATENCY = Histogram(
     buckets=(0.25, 0.5, 1, 2, 5, 10, 20, 40, 80, 160),
 )
 LLM_ERRORS = Counter("mockmate_llm_call_errors_total", "LLM calls that raised or returned unusable output", ["provider", "op"])
+LLM_FALLBACKS = Counter("mockmate_llm_fallbacks_total", "Text-LLM calls that skipped the self-hosted model", ["reason"])
+MODAL_COLD_START = Histogram(
+    "mockmate_modal_cold_start_seconds", "Evaluation start until the scaled-to-zero LLM answered /health "
+    "(includes Modal's GPU scheduling wait)", buckets=(15, 30, 60, 120, 180, 300, 450, 600, 900),
+)
+GPU_SECONDS = Counter("mockmate_gpu_seconds_estimated_total", "Estimated billed GPU-seconds (budget guard input)")
 
 
 @contextmanager

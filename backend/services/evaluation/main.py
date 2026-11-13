@@ -3,13 +3,13 @@ MockMate Evaluation Service — Port 8005
 Multi-stage pipeline: Gemini transcription → per-question eval with resume context →
 deterministic composite scoring → synthesis LLM call for language output.
 """
-import os, json, re, base64, httpx
+import os, json, re, base64, time, httpx
 from pathlib import Path
 from typing import Optional, List
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Request, Depends
 from common.auth import INTERNAL_HEADERS, require_internal
 from common.metrics import llm_call
-from . import queue
+from . import llm_router, queue
 from pydantic import BaseModel
 from dotenv import dotenv_values
 
@@ -18,7 +18,6 @@ config = dotenv_values(backend_dir / ".env")
 
 # --- API Keys -------------------------------------------------------------------
 GOOGLE_API_KEY  = config.get("GOOGLE_API_KEY")  or os.getenv("GOOGLE_API_KEY")
-DEEPSEEK_API_KEY = config.get("DEEPSEEK_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
 
 INTERVIEW_SERVICE_URL = os.getenv("INTERVIEW_SERVICE_URL", "http://localhost:8004")
 
@@ -32,16 +31,6 @@ if GOOGLE_API_KEY:
         print("[EvalService] ✓ Gemini 2.5 Flash initialized")
     except Exception as e:
         print(f"[EvalService] Gemini init error: {e}")
-
-# --- Initialize DeepSeek (fallback) ---------------------------------------------
-deepseek_client = None
-if DEEPSEEK_API_KEY:
-    try:
-        from openai import OpenAI
-        deepseek_client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
-        print("[EvalService] ✓ DeepSeek client initialized (fallback)")
-    except Exception as e:
-        print(f"[EvalService] DeepSeek init error: {e}")
 
 app = FastAPI(title="MockMate Evaluation Service", version="5.0.0")
 
@@ -70,36 +59,29 @@ class EvaluateResponse(BaseModel):
 
 
 # --- LLM Helper -----------------------------------------------------------------
-def _llm(prompt: str, system: str = "", json_mode: bool = False) -> Optional[str]:
-    """Call Gemini first, fallback to DeepSeek."""
-    full_prompt = f"{system}\n\n{prompt}" if system else prompt
+def _llm(prompt: str, system: str = "", json_mode: bool = False, op: str = "text") -> Optional[str]:
+    """Self-hosted Qwen3-8B on Modal first, Gemini as fallback (see llm_router)."""
+    text, reason = llm_router.modal_chat(prompt, system, json_mode, op)
+    if text is not None:
+        return text
+    if reason != "disabled":
+        print(f"[EvalService] Modal skipped ({reason}) for {op}; using Gemini")
 
     if gemini_model:
         try:
             gen_config = {"temperature": 0.4, "max_output_tokens": 4000}
             if json_mode:
                 gen_config["response_mime_type"] = "application/json"
-            with llm_call("gemini", "text") as call:
-                response = gemini_model.generate_content(full_prompt, generation_config=gen_config)
+            t = time.monotonic()
+            with llm_call("gemini", op) as call:
+                response = gemini_model.generate_content(f"{system}\n\n{prompt}" if system else prompt,
+                                                         generation_config=gen_config)
                 call.ok = bool(response.text)
+            llm_router.record("gemini", op, time.monotonic() - t, fallback_reason=reason)
             if response.text:
                 return response.text
         except Exception as e:
             print(f"[EvalService] Gemini LLM error: {e}")
-
-    if deepseek_client:
-        try:
-            msgs = []
-            if system:
-                msgs.append({"role": "system", "content": system})
-            msgs.append({"role": "user", "content": prompt})
-            kwargs = {"model": "deepseek-chat", "messages": msgs, "temperature": 0.4, "max_tokens": 4000}
-            if json_mode:
-                kwargs["response_format"] = {"type": "json_object"}
-            with llm_call("deepseek", "text"):
-                return deepseek_client.chat.completions.create(**kwargs).choices[0].message.content
-        except Exception as e:
-            print(f"[EvalService] DeepSeek LLM error: {e}")
 
     return None
 
@@ -340,7 +322,7 @@ RULES:
 - Preserve the candidate's exact words in answer_text
 - If boundaries are unclear, estimate based on topic changes"""
 
-    raw = _llm(prompt, json_mode=True)
+    raw = _llm(prompt, json_mode=True, op="segment")
     parsed = _parse_json(raw)
     return parsed.get("segments", []) if parsed else []
 
@@ -406,7 +388,7 @@ Return ONLY valid JSON:
   "resume_gap_flag": "<null if no gap, otherwise: 'Claims X on resume but answer shows no real depth in X'>"
 }}"""
 
-    raw = _llm(prompt, json_mode=True)
+    raw = _llm(prompt, json_mode=True, op="question_eval")
     parsed = _parse_json(raw)
     if parsed and "scores" in parsed:
         return parsed
@@ -539,7 +521,7 @@ Return ONLY valid JSON:
   }}
 }}"""
 
-    raw = _llm(prompt, json_mode=True)
+    raw = _llm(prompt, json_mode=True, op="synthesis")
     return _parse_json(raw) or {
         "executive_summary": f"Overall score: {overall}/100",
         "hire_recommendation": "Maybe",
@@ -595,6 +577,7 @@ async def _run_evaluation(req: EvaluateRequest):
 
 async def _evaluate(req: EvaluateRequest):
     print(f"\n[EvalService] === Starting evaluation for {req.interview_id} ===")
+    llm_router.begin()  # wakes the self-hosted LLM now so it boots while we transcribe
 
     local_path = _ensure_local(req.video_path)  # one S3 download for all stages
     try:
@@ -691,6 +674,7 @@ async def _evaluate(req: EvaluateRequest):
         }
 
     print(f"[EvalService] Evaluation complete. Score: {overall_score}")
+    feedback["llm_meta"] = llm_router.finish()  # provider, latency, fallback reason per call
 
     # Build per-question data for DB
     per_question_data = []
@@ -728,7 +712,7 @@ async def _evaluate(req: EvaluateRequest):
 def health():
     return {
         "status": "ok", "service": "evaluation", "version": "5.0.0",
-        "gemini": bool(gemini_model), "deepseek": bool(deepseek_client),
+        "gemini": bool(gemini_model), "self_hosted_llm": llm_router.enabled(),
     }
 
 

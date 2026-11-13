@@ -54,7 +54,7 @@ def test_full_pipeline_without_llm_produces_a_result(monkeypatch):
     async def fake_patch(iid, body): patched.append(body)
     monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
     monkeypatch.setattr(eval_main, "gemini_model", None)
-    monkeypatch.setattr(eval_main, "deepseek_client", None)
+    monkeypatch.setattr(eval_main.llm_router, "MODAL_LLM_URL", "")  # self-hosted LLM off: no LLM at all
     monkeypatch.setattr(eval_main, "_ensure_local", lambda p: p)
     monkeypatch.setattr(eval_main, "_transcribe", lambda p: "")
     monkeypatch.setattr(eval_main, "_analyze_frames", lambda p: {})
