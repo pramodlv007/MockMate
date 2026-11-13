@@ -109,3 +109,20 @@ def test_budget_accumulates_per_day(setup):
     router._add_gpu_seconds(30)
     router._add_gpu_seconds(12.5)
     assert router.gpu_seconds_today() == pytest.approx(42.5)
+
+
+def test_malformed_json_from_modal_goes_to_gemini(setup):
+    state, gem = setup
+    state["post"] = lambda: _ok('{"/**/": 1}')  # what the json_object grammar produced on day two
+    router.begin()
+    assert eval_main._llm("p", json_mode=True, op="question_eval", required=("scores",)) == '{"from": "gemini"}'
+    assert router.finish()["calls"][0]["fallback_reason"] == "modal_bad_json"
+
+
+def test_fenced_json_with_preamble_is_unwrapped(setup):
+    state, gem = setup
+    state["post"] = lambda: _ok('Here is the grade:\n```json\n{"scores": {}, "overall": 70}\n```')
+    router.begin()
+    out = eval_main._llm("p", json_mode=True, op="question_eval", required=("scores", "overall"))
+    router.finish()
+    assert out == '{"scores": {}, "overall": 70}' and gem.calls == 0

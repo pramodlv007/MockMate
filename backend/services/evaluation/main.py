@@ -59,9 +59,9 @@ class EvaluateResponse(BaseModel):
 
 
 # --- LLM Helper -----------------------------------------------------------------
-def _llm(prompt: str, system: str = "", json_mode: bool = False, op: str = "text") -> Optional[str]:
+def _llm(prompt: str, system: str = "", json_mode: bool = False, op: str = "text", required: tuple = ()) -> Optional[str]:
     """Self-hosted Qwen3-8B on Modal first, Gemini as fallback (see llm_router)."""
-    text, reason = llm_router.modal_chat(prompt, system, json_mode, op)
+    text, reason = llm_router.modal_chat(prompt, system, json_mode, op, required)
     if text is not None:
         return text
     if reason != "disabled":
@@ -322,7 +322,7 @@ RULES:
 - Preserve the candidate's exact words in answer_text
 - If boundaries are unclear, estimate based on topic changes"""
 
-    raw = _llm(prompt, json_mode=True, op="segment")
+    raw = _llm(prompt, json_mode=True, op="segment", required=("segments",))
     parsed = _parse_json(raw)
     return parsed.get("segments", []) if parsed else []
 
@@ -388,7 +388,7 @@ Return ONLY valid JSON:
   "resume_gap_flag": "<null if no gap, otherwise: 'Claims X on resume but answer shows no real depth in X'>"
 }}"""
 
-    raw = _llm(prompt, json_mode=True, op="question_eval")
+    raw = _llm(prompt, json_mode=True, op="question_eval", required=("scores", "overall"))
     parsed = _parse_json(raw)
     if parsed and "scores" in parsed:
         return parsed
@@ -521,7 +521,7 @@ Return ONLY valid JSON:
   }}
 }}"""
 
-    raw = _llm(prompt, json_mode=True, op="synthesis")
+    raw = _llm(prompt, json_mode=True, op="synthesis", required=("executive_summary",))
     return _parse_json(raw) or {
         "executive_summary": f"Overall score: {overall}/100",
         "hire_recommendation": "Maybe",

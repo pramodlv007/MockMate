@@ -7,6 +7,7 @@ that log for the stored evaluation. A daily GPU-seconds budget routes everything
 
 Unset MODAL_LLM_URL / INFERENCE_TOKEN = Modal disabled = previous behaviour (Gemini only).
 """
+import json
 import os
 import threading
 import time
@@ -132,8 +133,20 @@ def _wait_ready(run: _Run) -> bool:
 
 
 # ── Calls ────────────────────────────────────────────────────────────────────
-def modal_chat(prompt: str, system: str, json_mode: bool, op: str) -> tuple:
-    """Returns (text, None) from Modal, or (None, reason) when the caller should fall back."""
+def _json_object(text: str, required: tuple) -> Optional[str]:
+    """The JSON object inside `text` (fences/preamble stripped) if it has the required keys, else None."""
+    s = text[text.find("{"): text.rfind("}") + 1] if "{" in text else ""
+    try:
+        obj = json.loads(s)
+    except ValueError:
+        return None
+    return s if isinstance(obj, dict) and all(k in obj for k in required) else None
+
+
+def modal_chat(prompt: str, system: str, json_mode: bool, op: str, required: tuple = ()) -> tuple:
+    """Returns (text, None) from Modal, or (None, reason) when the caller should fall back.
+    json_mode: the reply must be a JSON object containing `required`; anything else falls back, because a
+    malformed reply would otherwise be scored with defaults instead of retried on Gemini."""
     run = _run.get() or _Run(wait_s=0)  # outside an evaluation: use Modal only if it's already up
     if not enabled():
         return None, "disabled"
@@ -143,9 +156,9 @@ def modal_chat(prompt: str, system: str, json_mode: bool, op: str) -> tuple:
         return None, "not_ready"
 
     msgs = ([{"role": "system", "content": system}] if system else []) + [{"role": "user", "content": prompt}]
+    # No response_format: a schema-less json_object grammar (with the server's no-whitespace rule) made Qwen
+    # emit junk keys like "/**/". The prompts spell out the JSON; we validate it below instead.
     body = {"model": MODAL_MODEL, "messages": msgs, "temperature": 0.4, "max_tokens": MAX_TOKENS}
-    if json_mode:
-        body["response_format"] = {"type": "json_object"}
     t = time.monotonic()
     run.first_modal = run.first_modal or t
     text, reason = None, "modal_error"
@@ -155,6 +168,9 @@ def modal_chat(prompt: str, system: str, json_mode: bool, op: str) -> tuple:
                            headers={"Authorization": f"Bearer {INFERENCE_TOKEN}"})
             if r.status_code == 200:
                 text = r.json()["choices"][0]["message"]["content"] or None
+                if text is not None and json_mode:
+                    text = _json_object(text, required)
+                    reason = "modal_bad_json"
             else:
                 reason = f"modal_http_{r.status_code}"  # 400 = prompt too long for the 8K context
         except (httpx.HTTPError, ValueError, KeyError, IndexError) as e:
